@@ -23,9 +23,60 @@ from pykrak.attn_pert import add_arr_attn
 from pykrak.inverse_iteration import get_phi
 from pykrak.sturm_seq import get_comp_krs
 from numba import njit
+import numba as nb
 
-@njit
+#float_arr_type = nb.types.Array(nb.f8, 1, 'A', readonly=True)
+#complex_arr_type = nb.types.Array(nb.c16, 1, 'A', readonly=True)
+#int_arr_type = nb.types.Array(nb.i8, 1, 'A', readonly=True)
+#tuple_type = nb.types.Tuple((complex_arr_type, float_arr_type, float_arr_type))
+
+@njit(cache=True)
+#@njit(float_arr_type(int_arr_type, float_arr_type), cache=True)
+def get_phi_z(ind_arr, z_arr):
+    """
+    Remove doubled layer values
+    """
+    N = ind_arr.size
+    for i in range(N):
+        if i < N-1:
+            phi_z_i = z_arr[ind_arr[i]:ind_arr[i+1]]
+        else:
+            phi_z_i = z_arr[ind_arr[i]:]
+        if i == 0:
+            phi_z = phi_z_i
+        else:
+            phi_z = np.concatenate((phi_z, phi_z_i[1:])) # elimiinae doubled layer values
+    return phi_z
+
+
+#@njit(tuple_type(nb.f8, float_arr_type, int_arr_type, float_arr_type, float_arr_type, float_arr_type, float_arr_type,nb.f8, nb.f8, nb.f8, nb.f8, nb.f8), cache=True)
+@njit(cache=True)
 def get_modes(freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax):
+    """
+    Get modes for a given frequency associated with the mesh info passed in
+    h_arr - np 1d array
+        array of mesh size within each layer
+    ind_arr - np 1d array of ints
+        array of indices of where each layer starts
+    z_arr - np 1d array
+        depths of each layer mesh stacked together
+    c_arr - np 1d array
+        sound speed of each layer mesh stacked together
+    rho_arr - np 1d array
+        density of each layer mesh stacked together
+    attn_arr - np 1d array
+        attenuation of each layer mesh stacked together
+    c_hs - float
+        sound speed of halfspace
+    rho_hs - float
+        density of halfspace
+    attn_hs - float
+        attenuation of halfspace
+    cmin - float
+        minimum modal phase speed  (kr_max = omega / cmin)
+    cmax - float
+        maximum modal phase speed  (kr_min = omega / cmax)
+    """
     omega = 2*np.pi*freq
     kr_min = omega / cmax
     kr_max = omega / cmin
@@ -41,7 +92,6 @@ def get_modes(freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_hs, rho_h
                  c_hs, rho_hs, lam_min, lam_max)
 
     M = min(M,krs.size) # keep track of number of modes
-
     phi = get_phi(krs, omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs)
 
     """ Factor in attenuation with perturbation theory"""
@@ -53,21 +103,4 @@ def get_modes(freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_hs, rho_h
     phi_z = get_phi_z(ind_arr, z_arr)
         
     return comp_krs, phi, phi_z
-
-@njit
-def get_phi_z(ind_arr, z_arr):
-    """
-    Remove doubled layer values
-    """
-    N = len(ind_arr)
-    for i in range(N):
-        if i < N-1:
-            phi_z_i = z_arr[ind_arr[i]:ind_arr[i+1]]
-        else:
-            phi_z_i = z_arr[ind_arr[i]:]
-        if i == 0:
-            phi_z = phi_z_i
-        else:
-            phi_z = np.concatenate((phi_z, phi_z_i[1:])) # elimiinae doubled layer values
-    return phi_z
 

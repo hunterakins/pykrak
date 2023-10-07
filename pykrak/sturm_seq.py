@@ -248,7 +248,7 @@ def layer_brent(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, a, b
     value = sb
     return value
 
-@njit
+@njit(cache=True)
 def find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam_max):
     tol = 1e-16 # close to machine precision
     root = layer_brent(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam_max, tol)
@@ -268,6 +268,8 @@ def get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min,
         raise ValueError('Mesh grid differs from spacing in h_arr')
     if N == -1: # need to compute total number of modes
         det, N = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min)
+        if N == 0:
+            return np.array([])
     if Nr_max == -1: # there may exist modes beyond what the user wants to compute
         det, Nr_max = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_max)
 
@@ -316,7 +318,7 @@ def get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min,
             kr_right = get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam, lam_max, N-sub_Nl, Nr_max=Nr_max)
             return kr_left+ kr_right
 
-@njit
+@njit(cache=True)
 def get_comp_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam_max):
     """
     Recursively bisect the domain, counting the modes in each 
@@ -329,6 +331,9 @@ def get_comp_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam
 
     det, Nl = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min)
     M = int(Nl - Nr)
+
+    if M == 0:
+        return np.zeros((0))
 
 
     
@@ -367,9 +372,5 @@ def get_comp_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam
         krs[i] = np.sqrt(root)/h0
     root = find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_l[M-1], lam_r[M-1])
     krs[M-1] = np.sqrt(root)/h0
-    krs = krs[::-1]
     return krs
-
-
-
 

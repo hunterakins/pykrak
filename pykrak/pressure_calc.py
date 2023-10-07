@@ -35,10 +35,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import numpy as np
 from matplotlib import pyplot as plt
 from pykrak.envs import factory
-from numba import njit
+from numba import njit, prange
 import numba as nb
 
-@njit
+@njit(cache=True, parallel=True)
 def get_phi_zr(zr, phi_z, phi):
     """
     Given array of points zr
@@ -74,7 +74,97 @@ def get_delta_R(tilt_angle, zr):
     deltaR = deltaR.reshape(zr.size,1)
     return deltaR
 
-@njit
+@njit(cache=True, parallel=True)
+def get_no_tilt_pressure(phi_zr, phi_zs, krs, r):
+    """
+    Consistent with fourier transform of the form
+    P(\omega) = \int_{-\infty}^{\infty} p(t) e^{- i \omega t} \dd t
+    From modes evaluated at receiver depths,
+    evaluated at source depth, 
+    wavenumbers kr, and source range r
+
+    Input - 
+    phi_zr - np 2d array
+        jth column is jth mode evaluated at receiver depths
+    phi_zs - np 2d array
+        jth column is jth mode evaluated at source depth
+        only one row
+    krs - np 1d array
+        wavenumbers
+    r - float
+        source receiver range
+    deltaR 
+        np 2d array: correction to range for array tilt/deformation
+    Return pressure as column vector
+    """
+    modal_matrix = phi_zr*phi_zs[0,:]
+    range_dep = np.exp(-1j*r*krs) / np.sqrt(krs.real*r)
+    N = phi_zr.shape[0]
+    p = np.zeros((N, 1), dtype=nb.c16)
+    for k in prange(N):
+        mode_contrib = np.sum(modal_matrix[k,:] * range_dep)
+        p[k,0] = mode_contrib
+    p *= 1j*np.exp(1j*np.pi/4) # assumes rho is 1 at source depth
+    p /= np.sqrt(8*np.pi)
+    return p
+
+@njit(cache=True)
+def get_arr_pressure(phi_zs, phi_zr, krs, r_arr, deltaR=np.array([0.0])):
+    """
+    Consistent with fourier transform of the form
+    P(\omega) = \int_{-\infty}^{\infty} p(t) e^{- i \omega t} \dd t
+    From modes evaluated at source and receiver depths
+    wavenumbers kr, and source ranges r
+
+    Input - 
+    phi_zs - np 2d array
+        first index is source depth index, second is mode number
+    phi_zr - np 2d array
+        first index is receiver depth index, second is mode number
+    krs - np 1d array
+        wavenumbers
+    r_arr - np 1d array
+        range between source array and receive array
+    deltaR 
+        np 1d array: correction to range for array tilt/deformation
+        either single number or a different number for each receiver depth
+    Return pressure as column vector
+    """
+    phi_zs = np.reshape(phi_zs, (phi_zs.shape[0], 1, phi_zs.shape[1]))
+    phi_zr = np.reshape(phi_zr, (1, phi_zr.shape[0], phi_zr.shape[1]))
+    modal_matrix = phi_zs *phi_zr
+    if deltaR.size == 1: # constant offset
+        r_arr = r_arr + deltaR
+        r_arr = np.reshape(r_arr, (1, r_arr.size))
+        krs = np.reshape(krs, (krs.size, 1))
+        range_dep = np.exp(-1j*r_arr*krs) / np.sqrt(krs.real*r_arr) # num modes x num ranges
+        # expand for receiver depth and source depth
+        range_dep = np.reshape(range_dep, ((1,1, range_dep.shape[0], range_dep.shape[1])))
+        modal_matrix = np.reshape(modal_matrix, (modal_matrix.shape[0], modal_matrix.shape[1], modal_matrix.shape[2], 1))
+        prod = modal_matrix*range_dep
+        # sum over modes
+        p = np.sum(prod, axis=2)
+    else:
+
+        # expand for each mode
+        r_arr = np.reshape(r_arr, (1, r_arr.size))
+        krs = np.reshape(krs, (krs.size, 1))
+        range_dep = np.exp(-1j*r_arr*krs) / np.sqrt(krs.real*r_arr) # num modes x num ranges
+
+        # expand for receiver depth and source depth
+        range_dep = np.reshape(range_dep, ((1,1, range_dep.shape[0], range_dep.shape[1])))
+        modal_matrix = np.reshape(modal_matrix, (modal_matrix.shape[0], modal_matrix.shape[1], modal_matrix.shape[2], 1))
+        prod = modal_matrix*range_dep
+        # sum over modes
+        p = np.sum(prod, axis=2)
+        corr_phase = np.exp(+1j*np.mean(krs)*deltaR)
+        corr_phase = np.reshape(corr_phase, (1, phi_zr.shape[0], 1))
+        p *= corr_phase
+    p *= 1j*np.exp(1j*np.pi/4) # assumes rho is 1 at source depth
+    p /= np.sqrt(8*np.pi)
+    return p
+
+@njit(cache=True)
 def get_pressure(phi_zr, phi_zs, krs, r, deltaR=np.array([0.0])):
     """
     Consistent with fourier transform of the form
@@ -87,6 +177,7 @@ def get_pressure(phi_zr, phi_zs, krs, r, deltaR=np.array([0.0])):
     phi_zr - np 2d array
         jth column is jth mode evaluated at receiver depths
     phi_zs - np 2d array
+        first index is a dummy rcvr index
         jth column is jth mode evaluated at source depth
     krs - np 1d array
         wavenumbers
@@ -102,7 +193,7 @@ def get_pressure(phi_zr, phi_zs, krs, r, deltaR=np.array([0.0])):
         range_dep = np.exp(-1j*r*krs) / np.sqrt(krs.real*r)
         N = phi_zr.shape[0]
         p = np.zeros((N, 1), dtype=nb.c16)
-        for k in range(N):
+        for k in prange(N):
             mode_contrib = np.sum(modal_matrix[k,:] * range_dep)
             p[k,0] = mode_contrib
     else:

@@ -1,13 +1,12 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from pykrak.sturm_seq import get_krs, get_arrs
+from pykrak.sturm_seq import get_comp_krs, get_krs, get_arrs
 from pykrak.shooting_routines import shoot_first_layer, shoot_from_bottom
 from pykrak.inverse_iteration import get_phi
 from pykrak.attn_pert import add_attn, get_attn_conv_factor
 from pykrak.group_pert import get_ugs
 import numba as nb
-"""
-Description:
+""" Description:
     This module contains the class Env, which is used to store the model parameters
     and manage the normal mode calculation
     It also contains a Modes object to store the output of a single frequency run
@@ -262,13 +261,15 @@ class Env:
             # get wavenumbers for this mesh
             lam_min = np.square(h0*kr_min) 
             lam_max = np.square(h0*kr_max) 
-            krs = get_krs(self.omega, h_arr, ind_arr, z_arr, c_arr, rho_arr,\
+            krs = get_comp_krs(self.omega, h_arr, ind_arr, z_arr, c_arr, rho_arr,\
                          self.c_hs, self.rho_hs, lam_min, lam_max)
             krs = krs[::-1] # largest to smallest
             krs = np.array(krs) 
             kr_meshes.append(krs)
 
             M = min(M,krs.size) # keep track of number of modes
+            if M == 0:
+                return np.zeros((0))
 
             if i == 0: # initialize matrices for extrapolations
                 kr_sq_mat = np.zeros((Nh, M))

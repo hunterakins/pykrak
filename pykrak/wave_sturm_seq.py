@@ -132,6 +132,13 @@ def layer_brent(k, h, bn, a, b, t):
         Original FORTRAN77 version by Richard Brent
         Python version by John Burkardt
         Numba-ized version specific for the layered S-L problem by Hunter Akins
+
+    k is the horizontal wavenumber 
+    h is the mesh grid
+    bn is the array of buoyancy frequency squared minus intertial frequency
+    a is left bracket wavenumber
+    b is right
+    t is tolerance
     """
     machep=1e-16
 

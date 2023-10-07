@@ -58,7 +58,6 @@ def dt_power_spec(k, E0):
     Dozier Tappert power spectrum
     """
     #P•(k) 2 No•w,E ø (t- 1)j/j* k • (• +j/j )  (• + 
-    """
     return
 
         

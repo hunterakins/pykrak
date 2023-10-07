@@ -14,8 +14,6 @@ Description:
 
     In particular, H_2^2 = e^{i \pi} H_0^2 (asymptotically) = - H_0^2, and H_1^2 = e^{i \pi /2} H_0^2 = i H_0^2 (not -i as in T and K) 
 
-
-
 Date:
     5/14/2023
 
@@ -25,22 +23,14 @@ Institution: Scripps Institution of Oceanography, UC San Diego
 """
 
 import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib import rc
-rc('text', usetex=True)
-import matplotlib
-matplotlib.rcParams['mathtext.fontset'] = 'stix'
-matplotlib.rcParams['font.family'] = 'STIXGeneral'
 from pykrak.misc import get_simpsons_integrator, get_layer_N
-from pykrak.sturm_seq import get_arrs
-from numba import njit
-import numba as nb
 from pykrak.pressure_calc import get_phi_zr
-from pykrak import pressure_calc as pc
+from numba import njit, prange
+import numba as nb
 
 
 
-@njit
+@njit(cache=True)
 def get_layered_eta_ai_integrator(h_arr, ind_arr, z_arr, c_arr, ci_arr, rho_arr):
     """
     Input
@@ -74,7 +64,8 @@ def get_layered_eta_ai_integrator(h_arr, ind_arr, z_arr, c_arr, ci_arr, rho_arr)
             integrator[-1] += integrator_i[0] # phi shares points with previous layer
             integrator = np.concatenate((integrator, integrator_i[1:]))
     return integrator
-@njit
+
+@njit(cache=True)
 def get_layered_eta_aiaj_integrator(h_arr, ind_arr, z_arr, c_arr, ci_arr, cj_arr, rho_arr):
     """
     eta is index of refraction squared...this is partial deriv...
@@ -114,7 +105,7 @@ def get_layered_eta_aiaj_integrator(h_arr, ind_arr, z_arr, c_arr, ci_arr, cj_arr
     return integrator
 
 # independent of source position index of refraction equations...
-@njit
+@njit(cache=True)
 def get_zfg_eta_ai(h_arr, ind_arr, ci_arr, z_arr, c_arr, rho_arr, krs, phi, omega):
     """
     Equation 18b in Thode and Kim (2004):
@@ -137,7 +128,7 @@ def get_zfg_eta_ai(h_arr, ind_arr, ci_arr, z_arr, c_arr, rho_arr, krs, phi, omeg
     zfg_arr *= omega**2
     return zfg_arr
 
-@njit
+@njit(cache=True)
 def get_zfg_eta_aiaj(h_arr, ind_arr, ci_arr, cj_arr, z_arr, c_arr, rho_arr, krs, phi, omega):
     """
     Equation 18b in Thode and Kim (2004) evaluated for \pdv[2]{\eta}{a_i}{a_j}
@@ -160,7 +151,7 @@ def get_zfg_eta_aiaj(h_arr, ind_arr, ci_arr, cj_arr, z_arr, c_arr, rho_arr, krs,
     zfg_arr *= omega**2
     return zfg_arr
 
-@njit
+@njit(cache=True)
 def H0(kr, r):
     """
     Asymptotic form of zeroth outward going Hankel function (technically the second
@@ -173,7 +164,7 @@ def H0(kr, r):
     p /= np.sqrt(kr.real*r*np.pi)
     return p
 
-@njit
+@njit(cache=True)
 def get_rfg(krs, r):
     """
     Equation 18c in Thode and Kim (2004)
@@ -206,7 +197,7 @@ def get_rfg(krs, r):
                 rfg_arr[g,f] = rfg #symmetric
     return rfg_arr
 
-@njit
+@njit(cache=True)
 def get_rfgh(krs, r):
     """
     Equation 20b in Thode and Kim (2004)
@@ -254,7 +245,7 @@ def get_rfgh(krs, r):
                     rfg_arr[f,g,h] = term
     return rfg_arr
                     
-@njit
+@njit(cache=True)
 def get_dpda(zfg, krs, r, phi_zr, phi_zs):
     """
     Given the matrix Zfg for a given perturbation basis vector, 
@@ -278,7 +269,7 @@ def get_dpda(zfg, krs, r, phi_zr, phi_zs):
     
     return dpda
 
-@njit
+@njit(cache=True)
 def get_dpdaidaj(zfg_ai, zfg_aj, zfg_aiaj, krs, r, phi_zr, phi_zs):
     """
     Equation 20 a) in Thode and Kim
@@ -302,381 +293,117 @@ def get_dpdaidaj(zfg_ai, zfg_aj, zfg_aiaj, krs, r, phi_zr, phi_zs):
     dpdaidaj *= .5*1j
     return dpdaidaj
 
-def test_pekeris():
+@njit(cache=True)
+def get_dpda_arr(zfg_arr, krs, r_arr, phi_zr, phi_zs):
     """
-    Test adjoint model by comparison with dpda
+    Get the derivative of the pressure with respect to the environment
+    for all of the parameters implicitly specificed in zfg_arr
+    zfg_arr - np 3d array
+        first axis is num parameters, second is mode number and third is mode number
+    krs - np 1d array
+        wavenumbers
+    r_arr - np 1d array
+        array of ranges
+    phi_zr - np 2d array
+        first index is receiver depth index, second is mode number
+    phi_zs - np 2d array
+        first index is source depth index, second is mode number
     """
 
-    from pykrak.env_pert import PertEnv
-    z_list = [np.array([0, 100.]), np.array([100., 146.])]
-    c_list = [np.array([1500., 1500.]), np.array([1645., 1645. + 46.])]
-    rho_list = [np.ones(2), 1.3*np.ones(2)]
-    attn_list = [np.zeros(2), 0.25 * np.ones(2)]
-    c_hs = 1800.
-    rho_hs = 2.0
-    attn_hs = 0.0
-    attn_units ='dbplam'
-    freq = 100.
-    #z_list = [np.array([0, 5000.])]
-    #c_list = [np.array([1500., 1500.])]
-    #rho_list = [np.ones(2)]
-    #attn_list = [np.zeros(2)]
-    #c_hs = 1800.
-    #rho_hs = 2.0
-    #attn_hs = 0.0
-    #attn_units ='dbplam'
-    #freq = 10.
+    num_zs = phi_zs.shape[0]
+    num_zr = phi_zr.shape[0]
+    num_r = r_arr.size
+    P = zfg_arr.shape[0]    
+    dpda = np.zeros((num_zs, num_zr, num_r, P), dtype=np.complex128)
+    for k in range(P):
+        zfg_k = zfg_arr[k, :, :]
+        for zs_i in range(num_zs):
+            phi_zs_i = (phi_zs[zs_i,:])
+            phi_zs_i = np.reshape(phi_zs_i, (1, phi_zs_i.size))
+            for r_i in range(num_r):
+                dpda[zs_i, :, r_i, k] = get_dpda(zfg_k, krs, r_arr[r_i], phi_zr, phi_zs_i)
+    return dpda
 
-    zr = np.linspace(10, 90., 20)
-    zs = np.array([50.])
-    r = 1*1e3
-
-    env = PertEnv(z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs, attn_units)
-    env.plot_env()
-    env.add_freq(freq)
-    N_list = env.get_N_list() # get lambda / 20 spacing
-    N_list= [1*x for x in N_list] # double it..
-    rmax = 1e6
-    krs = env.get_krs(**{'N_list': N_list, 'rmax':rmax})
-    phi = env.phi
-
-    z_list, c_list, rho_list, attn_list = env.interp_env_vals(N_list)
-    h_list = [x[1] - x[0] for x in z_list]
-    h_arr, ind_arr, z_arr, c_arr, rho_arr = get_arrs(h_list, z_list, c_list, rho_list)
-
-
-    # now introduce a perturbation vector
-    #delta_c = np.ones(env.c_list[0].size) # constant offset
-    delta_c = np.array([-.4, .4]) # linear offset
-    from copy import deepcopy
-    tmp_c_list = deepcopy(c_list)
-    tmp_delta_c = np.interp(z_list[0], env.z_list[0], delta_c)
-    tmp_c_list[0] += tmp_delta_c
-    _, _, _, new_c_arr, _ = get_arrs(h_list, z_list, tmp_c_list, rho_list)
-    ci_arr = new_c_arr - c_arr # get it interpolated onto the same grid
-
-    # also add it as a perturbation matrix...
-    env.add_model_matrix(delta_c[:,None], 0)
+@njit(cache=True)
+def get_kernel(h_arr, ind_arr, z_arr, c_arr, rho_arr, krs, phi_z, phi, omega, zr, zs, rgrid, stride):
+    """
+    Get VTSK
+    Input
+    h_arr - np 1d array of floats
+        mesh spacings for each layer
+    ind_arr - np 1d array of ints
+        index of first value for each layer
+    z_arr - np 1d array
+        depths of the layer meshes concatenated
+    c_arr - np 1d array
+        sound speed of the layer meshes concatenated
+    rho_arr - np 1d array
+        density of the layer meshes concatenated
+    krs -np 1d array
+        wavenumbers to use in the kernel
+    phi_z - np 1d array
+        grid that mode depth function are evaluated on
+    phi - np 2d array
+        mode depth functions
+        first axis is depth, second is mode number
+    omega - float
+        angular frequency
+    zr - np 1d array
+        receiver depths
+    zs - np 1d array with single element (float)
+        source depth
+    rgrid - np 1d array
+        grid of source ranges
+    stride - int
+        downsample the depths
 
 
-
-
-    cref = 1500.
-    omega = 2*np.pi*freq
-    kref = omega/cref
-    zfg = get_zfg_eta_ai(h_arr, ind_arr, ci_arr, z_arr, c_arr, rho_arr, krs, phi, omega)
-
-    plt.figure()
-    plt.pcolormesh(zfg)
-    plt.colorbar()
-
-    phi_z = env.phi_z
+    Output - 
+    integrator - np array that contains the weights to apply to the mode product
+        to get the simpsons rule integration of the mode product with eta (equation 18b)
+    """
+    layer_N = get_layer_N(ind_arr, z_arr)
+    num_layers = len(layer_N)
+    for i in range(len(layer_N)):
+        if i < num_layers -1 :
+            c_i = c_arr[ind_arr[i]:ind_arr[i+1]]
+            rho_i = rho_arr[ind_arr[i]:ind_arr[i+1]]
+        else:
+            c_i = c_arr[ind_arr[i]:]
+            rho_i = rho_arr[ind_arr[i]:]
+        integrator_i = get_simpsons_integrator(layer_N[i], h_arr[i])[0,:]
+        integrator_i *= 1 / (c_i**3 * rho_i)
+        if i == 0:
+            integrator = integrator_i
+        else:
+            integrator[-1] += integrator_i[0] # phi shares points with previous layer
+            integrator = np.concatenate((integrator, integrator_i[1:]))
+    integrator *= -2*omega**2
 
     phi_zr = get_phi_zr(zr, phi_z, phi)
     phi_zs = get_phi_zr(zs, phi_z, phi)
-    dpda = get_dpda(zfg, krs, r, phi_zr, phi_zs)
 
-    fig, axes = plt.subplots(1,2)
-    axes[0].grid()
-    axes[1].grid()
-    axes[0].plot(abs(dpda), 'k')
-    axes[1].plot(180/np.pi*np.angle(dpda), 'k')
 
-    phi_zr = env.get_phi_zr(zr)
-    phi_zs = env.get_phi_zr(zs)
-    from pykrak import pressure_calc as pc
-    p1 = pc.get_pressure(phi_zr, phi_zs, krs, r)
 
+    integrator = integrator[::stride]
     M = krs.size
-
-    delta_a_grid = [2., 1., .1, .01, .001]
-    dpda_mat = np.zeros((zr.size, len(delta_a_grid)), dtype=np.complex_)
-    for i in range(len(delta_a_grid)):
-        delta_a = delta_a_grid[i]
-        delta_pert = np.array(delta_a).reshape(1,1)
-        env.perturb_env([delta_pert])
-        krs = env.get_krs(**{'N_list': N_list, 'rmax':rmax})
-        if krs.size != M:
-            print('krs size changed!, linear theory no good?')
-        phi_zr = env.get_phi_zr(zr)
-        phi_zs = env.get_phi_zr(zs)
-        p_new = pc.get_pressure(phi_zr, phi_zs, krs, r)
-        dp = p_new - p1
-        dpda_mat[:,i] = dp[:,0] / delta_a
-        axes[0].plot(abs(dp/delta_a))
-        axes[1].plot(180/np.pi*np.angle(dp/delta_a))
-        env.unperturb_env([delta_pert])
-
-        
-    plt.show()
-
-def calc_pert_p(env, delta_pert, zr, zs, r):
-    """
-    Compute numerical forward difference first derivative
-    for pressure field with parameter step delta a
-    """
-    dz = 1500 / (100*env.freq) #
-    env.perturb_env([delta_pert])
-    N_list = [int((env.z_list[i][-1] - env.z_list[i][0])/ dz) + 1 for i in range(len(env.z_list))]
-    krs = env.get_krs(**{'N_list': N_list, 'Nh':1})
-    phi_zr = env.get_phi_zr(zr)
-    phi_zs = env.get_phi_zr(zs)
-    p1 = pc.get_pressure(phi_zr, phi_zs, krs, r)
-    p1 = p1[:,0]
-    env.unperturb_env([delta_pert])
-    return p1
-
-def test_swellex():
-    """
-    Test adjoint model by comparison with dpda
-    """
-
-    from pykrak.envs import factory
-    freq = 100.
-    env = factory.create('swellex')(**{'pert':True})
-    env.add_freq(freq)
-    conv_factor = env.add_attn_conv_factor()
-    dz = 1500 / (100*freq) #
-    N_list = [int((env.z_list[i][-1] - env.z_list[i][0])/ dz) + 1 for i in range(len(env.z_list))]
-    z_list, c_list, rho_list, attn_list= env.interp_env_vals(N_list)
-    c_hs, rho_hs, attn_hs = env.c_hs, env.rho_hs, env.attn_hs
-    h_list = [x[1] - x[0] for x in z_list]
-    h_arr, ind_arr, z_arr, c_arr, rho_arr = get_arrs(h_list, z_list, c_list, rho_list)
-
-    zr = np.linspace(20, 190., 4)
-    zs = np.array([50.])
-    r = 5*1e3
-
-    env.plot_env()
-    krs = env.get_krs(**{'N_list': N_list, 'Nh':1})
-    phi = env.phi
-
-    # now introduce a perturbation vector
-    #delta_c = np.ones(env.c_list[0].size) # constant offset
-    delta_c = env.z_list[0]-  np.mean(z_list[0]) # linear offset
-    delta_c /= 100
-    from copy import deepcopy
-    tmp_c_list = deepcopy(c_list)
-    tmp_delta_c = np.interp(z_list[0], env.z_list[0], delta_c)
-    tmp_c_list[0] += tmp_delta_c
-    _, _, _, new_c_arr, _ = get_arrs(h_list, z_list, tmp_c_list, rho_list)
-    ci_arr = new_c_arr - c_arr # get it interpolated onto the same grid
-
-    plt.figure()
-    plt.plot(env.z_list[0], delta_c, 'b')
-    plt.plot(z_arr, ci_arr, 'k')
-
-    # also add it as a perturbation matrix...
-    env.add_model_matrix(delta_c[:,None], 0)
-
-    omega = 2*np.pi*freq
-    zfg = get_zfg_eta_ai(h_arr, ind_arr, ci_arr, z_arr, c_arr, rho_arr, krs, phi, omega)
-
-    phi_z = env.phi_z
-
-    phi_zr = get_phi_zr(zr, phi_z, phi)
-    phi_zs = get_phi_zr(zs, phi_z, phi)
-    dpda = get_dpda(zfg, krs, r, phi_zr, phi_zs)
-
-
-    # plot adjoint dpda
-    fig, axes = plt.subplots(1,2)
-    fig.suptitle('Comparison of adjoint and numerical derivatives')
-    axes[0].grid()
-    axes[1].grid()
-    axes[0].plot(abs(dpda), 'k')
-    axes[1].plot(180/np.pi*np.angle(dpda), 'k')
-
-    # calculate pressure for unperterubed env for numerical calcs.
-    phi_zr = env.get_phi_zr(zr)
-    phi_zs = env.get_phi_zr(zs)
-    from pykrak import pressure_calc as pc
-    p0 = pc.get_pressure(phi_zr, phi_zs, krs, r)
-    p0 = p0[:,0]
-
-
-    print('p0', p0)
-
-    # gen random vector for inner prod testing
-    np.random.seed(2)
-    tmp = np.random.randn(zr.size) + 1j*np.random.randn(zr.size)
-    tmp /= np.linalg.norm(tmp) 
-    print('d', tmp)
-   
-    
-    adj_df = np.sum(dpda.conj()*tmp)
-
-    ip0 = np.sum(np.conj(p0)*tmp)
-
-    M = krs.size
-
-    #delta_a_grid = [.01, .001, .0001, .00001, .000001]
-    delta_a_grid = np.logspace(-4, -1, 3)
-
-    d_ip_mat = np.zeros(len(delta_a_grid), dtype=np.complex_)
-    dpda_mat = np.zeros((zr.size, len(delta_a_grid)), dtype=np.complex_)
-
-    dpda_adj = dpda.copy()
-
-    # loop over step size of parameter pert. for num. calc. of derivs.
-    for i in range(len(delta_a_grid)):
-        delta_a = delta_a_grid[i]
-        delta_pert = np.array(delta_a).reshape(1,1)
-        p1 = calc_pert_p(env, delta_pert, zr, zs, r)
-
-        dp = p1-p0
-        dpda = dp / delta_a
-        dpda_mat[:,i] = dpda
-
-        # now test inner product and norm sq chain rules
-        ip1 = np.sum((p1.conj()*tmp))
-        dipda = np.sum(np.conj(dp) * tmp) / delta_a #
-
-        d_ip_mat[i] = dipda
-
-        axes[0].plot(abs(dpda))
-        axes[1].plot(180/np.pi*np.angle(dpda))
-
-
-    resid = dpda_mat - dpda_adj[:, None]
-    p_resid = np.linalg.norm(p0)
-    resid_norm = np.linalg.norm(resid, axis=0)
-    plt.figure()
-    plt.plot(delta_a_grid, resid_norm / p_resid, 'b')
-    plt.grid()
-    plt.xlabel('delta_a')
-    plt.ylabel('residual norm')
-    plt.xscale('log')
-
-    fig, axes = plt.subplots(1,2, sharex='all')
-    fig.suptitle('Coparison of magnitude and phase of inner product derivatve')
-    axes[0].plot(delta_a_grid, abs(d_ip_mat), 'b')
-    axes[1].plot(delta_a_grid, 180/np.pi*np.angle(d_ip_mat), 'b')
-    axes[0].plot(delta_a_grid, [abs(adj_df)]*len(delta_a_grid), 'k', label='adjoint')
-    axes[1].plot(delta_a_grid, [180/np.pi*np.angle(adj_df)]*len(delta_a_grid), 'k', label='adjoint')
-    axes[0].set_xscale('log')
-    plt.legend()
-
-    print('adj df', adj_df)
-        
-    plt.show()
-
-def test_swellex_second_deriv():
-    """
-    Test adjoint model by comparison with dpda
-    """
-
-    from pykrak.envs import factory
-    freq = 10.
-    env = factory.create('swellex')(**{'pert':True})
-    env.add_freq(freq)
-    conv_factor = env.add_attn_conv_factor()
-    dz = 1500 / (100*freq) # fine for good 
-    N_list = [int((env.z_list[i][-1] - env.z_list[i][0])/ dz) + 1 for i in range(len(env.z_list))]
-    z_list, c_list, rho_list, attn_list= env.interp_env_vals(N_list)
-    c_hs, rho_hs, attn_hs = env.c_hs, env.rho_hs, env.attn_hs
-    h_list = [x[1] - x[0] for x in z_list]
-    h_arr, ind_arr, z_arr, c_arr, rho_arr = get_arrs(h_list, z_list, c_list, rho_list)
-
-    zr = np.linspace(20, 190., 4)
-    zs = np.array([50.])
-    r = 5*1e3
-
-
-    env.plot_env()
-    krs = env.get_krs(**{'N_list': N_list, 'Nh':1})
-    phi = env.phi
-
-    # now introduce a perturbation vector
-    #delta_c = np.ones(env.c_list[0].size) # constant offset
-    delta_c = env.z_list[0]-  np.mean(z_list[0]) # linear offset
-    delta_c /= 100
-    from copy import deepcopy
-    tmp_c_list = deepcopy(c_list)
-    tmp_delta_c = np.interp(z_list[0], env.z_list[0], delta_c)
-    tmp_c_list[0] += tmp_delta_c
-    _, _, _, new_c_arr, _ = get_arrs(h_list, z_list, tmp_c_list, rho_list)
-    ci_arr = new_c_arr - c_arr # get it interpolated onto the same grid
-
-    plt.figure()
-    plt.plot(env.z_list[0], delta_c, 'b')
-    plt.plot(z_arr, ci_arr, 'k')
-
-    # also add it as a perturbation matrix...
-    env.add_model_matrix(delta_c[:,None], 0)
-
-    omega = 2*np.pi*freq
-    zfg = get_zfg_eta_ai(h_arr, ind_arr, ci_arr, z_arr, c_arr, rho_arr, krs, phi, omega)
-    zfg_aa = get_zfg_eta_aiaj(h_arr, ind_arr, ci_arr, ci_arr, z_arr, c_arr, rho_arr, krs, phi, omega)
-
-    phi_z = env.phi_z
-
-    phi_zr = get_phi_zr(zr, phi_z, phi)
-    phi_zs = get_phi_zr(zs, phi_z, phi)
-    #dpda = get_dpda(zfg, krs, r, phi_zr, phi_zs) # adjoint deriv.
-
-    dpda2 = get_dpdaidaj(zfg, zfg, zfg_aa, krs, r, phi_zr, phi_zs)
-
-
-    # plot adjoint dpda
-    fig, axes = plt.subplots(1,2)
-    axes[0].grid()
-    axes[1].grid()
-    axes[0].plot(abs(dpda2), 'k')
-    axes[1].plot(180/np.pi*np.angle(dpda2), 'k')
-
-    # calculate pressure for unperterubed env for numerical calcs.
-    phi_zr = env.get_phi_zr(zr)
-    phi_zs = env.get_phi_zr(zs)
-    p0 = pc.get_pressure(phi_zr, phi_zs, krs, r)
-    p0 = p0[:,0]
-
-    M = krs.size
-
-    delta_a_grid = np.logspace(-3, -1, 10)
-
-    dpda2_adj = dpda2.copy()
-
-    # loop over step size of parameter pert. for num. calc. of derivs.
-    dpda_mat = np.zeros((zr.size, len(delta_a_grid)), dtype=np.complex_)
-    for i in range(len(delta_a_grid)):
-        delta_a = delta_a_grid[i]
-        print('delta a', delta_a)
-        delta_pert = np.array(delta_a).reshape(1,1)
-        pr = calc_pert_p(env, delta_pert, zr, zs, r)
-
-        pl = calc_pert_p(env, -delta_pert, zr, zs, r)
-
-        d2p = pr+ pl - 2*p0
-        dpda = d2p / delta_a**2
-        dpda_mat[:,i] = dpda
-
-        axes[0].plot(abs(dpda), label=str(delta_a))
-        axes[1].plot(180/np.pi*np.angle(dpda), label=str(delta_a))
-
-    resid = dpda_mat - dpda2_adj[:, None]
-    plt.legend()
-    p_resid = np.linalg.norm(p0)
-    resid_norm = np.linalg.norm(resid, axis=0)
-    plt.figure()
-    plt.plot(delta_a_grid, resid_norm / p_resid, 'b')
-    plt.grid()
-    plt.xlabel('delta_a')
-    plt.ylabel('residual norm')
-    plt.xscale('log')
-
-    #fig, axes = plt.subplots(1,2, sharex='all')
-    #axes[0].plot(delta_a_grid, abs(d_ip_mat), 'b')
-    #axes[1].plot(delta_a_grid, 180/np.pi*np.angle(d_ip_mat), 'b')
-    #axes[0].plot(delta_a_grid, [abs(adj_df)]*len(delta_a_grid), 'k')
-    #axes[1].plot(delta_a_grid, [180/np.pi*np.angle(adj_df)]*len(delta_a_grid), 'k')
-    #axes[0].set_xscale('log')
-
-        
-    plt.show()
-    
-if __name__ == '__main__':
-    #test_pekeris()
-    #test_swellex()
-    test_swellex_second_deriv()
+    kernel = np.zeros((zr.size, rgrid.size, integrator.size), dtype=np.complex_)
+    for j in range(zr.size):
+        kernel_j = np.zeros((rgrid.size, integrator.size), dtype=np.complex_)
+        for f in range(M):
+            uf = phi[::stride,f]
+            krf = krs[f]
+            kernel_j += np.outer(-1j*rgrid*H0(krf,rgrid), uf**2 * phi_zr[j,f] * phi_zs[0,f]/ (2*krf))
+            for g in range(M):
+                krg = krs[g]
+                ug = phi[::stride,g]
+                if g == f:
+                    pass
+                else:
+                    kernel_j += np.outer(H0(krf,rgrid) - H0(krg,rgrid), uf * ug * phi_zr[j,f] * phi_zs[:,g] /(krf**2 - krg**2))
+                #integrand = uf * ug
+        kernel_j = kernel_j*integrator
+        kernel[j,...] = kernel_j
+    kernel *= 1j / 4
+    return kernel
 
