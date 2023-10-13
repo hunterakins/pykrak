@@ -26,12 +26,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib import rc
-rc('text', usetex=True)
-import matplotlib
-matplotlib.rcParams['mathtext.fontset'] = 'stix'
-matplotlib.rcParams['font.family'] = 'STIXGeneral'
 import numba as nb
 from numba import njit
 
@@ -39,8 +33,8 @@ from numba import njit
 float_arr_type = nb.types.Array(nb.f8, 1, 'A', readonly=True)
 int_arr_type = nb.types.Array(nb.i8, 1, 'A', readonly=True)
 
-@njit(float_arr_type(nb.f8, nb.f8, float_arr_type, float_arr_type, nb.f8))
-def get_a(omega, h, c, rho, h0):
+@njit(float_arr_type(nb.f8, float_arr_type, float_arr_type, nb.f8))
+def get_a(h, k_sq, rho, h0):
     """
     Compute the diagonal elements a used for depths within a layer
     For the pseudo-Sturm Liouville problem
@@ -56,10 +50,8 @@ def get_a(omega, h, c, rho, h0):
     To accomplish that I compute for every detph and discard first and last pt
     I compute the value for the interface depth using a_last or a_bdry
     Input
-    omega - float
-        source freq (rad/s)
-    c - np 1d array
-        ssp vals at depths z0, z1, ..., zN-1 
+    k_sq - np 1d array
+        (omega / ssp vals)**2 at depths z0, z1, ..., zN-1  (local wavenumber omega / c(z) squared)
         as mentioned, depths z0 and zN-1 are interface depths
     rho - np 1d array
         density at depths z0, z1, ..., zN-1 
@@ -69,11 +61,11 @@ def get_a(omega, h, c, rho, h0):
     avec - np 1d array
         diagonal values of matrix
     """
-    avec = (-2.0*h0*h0/h/h + h0*h0*omega*omega / c/c)
+    avec = (-2.0*h0*h0/h/h + h0*h0*k_sq)
     return avec[1:-1]
    
-@njit(nb.f8(nb.f8, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8))
-def get_a_last(omega, h, cu, rhou, cb, rhob, h0, lam):
+@njit(nb.f8(nb.f8, nb.f8, nb.f8, nb.c16, nb.f8, nb.f8, nb.f8))
+def get_a_last(h, ku_sq, rhou, kb_sq, rhob, h0, lam):
     """
     Enforce halfspace boundary condition
     Eqn. 5.110 but multiplied by 2*h*rho * h0^2 / h^2 
@@ -84,45 +76,45 @@ def get_a_last(omega, h, cu, rhou, cb, rhob, h0, lam):
             -\frac{h_{0}^{2} \rho_{u} h}{h^{2} \rho_{b}} \gamma_{b}^{2} $
     """
     kr_sq = lam /(h0*h0)
-    if kr_sq < np.square(omega / cb):
+    if kr_sq < kb_sq.real:
         raise ValueError('cmax not set properly (mode is not exponentially decaying in halfspace). kr_sq < (omega / cb)^2 ({0} < {1}')
-    gamma_b = np.sqrt(kr_sq - np.square(omega/cb))
+    gamma_b = np.sqrt(kr_sq - kb_sq)
+    gamma_b = gamma_b.real
 
     term1 = -2*h0*h0 / (h*h)
-    term2 = h0*h0*omega*omega / cu /cu 
+    term2 = h0*h0*ku_sq
     term3 = -gamma_b * 2* h0*h0 * rhou / ( h * rhob )
     alast = term1 + term2 + term3
     return alast
 
-@njit(nb.f8(nb.f8, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8))
-def get_a_bdry(omega, hu, hb, cu, rhou, cb, rhob, h0):
+@njit(nb.f8(nb.f8, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8))
+def get_a_bdry(hu, hb, ku_sq, rhou, kb_sq, rhob, h0):
     """
     Get center term for finite difference approximation to layer condition  
     Equation 5.131 multiplied through by alpha = h0^2 (h_u / (2 \rho_u) + h_b / 2 \rho_b)^{-1}
-    omega - float
     hu - float
         mesh grid stepsize in above layer
     hb - float
         mesh grid stepsize in below layer
-    cu - float
-        sound speed above
+    ku_sq - float
+        local wavenumber squared above
     rhou
         density above
-    cb - float
-        speed blow
+    kb_sq - float
+        local wavenumber k(z) squared evaluated below
     rhob - float
         density below
     h0 - float 
         reference meshgrid step size for A
     """
-    om_sq = np.square(omega)
-    cu_sq = np.square(cu)
-    cb_sq = np.square(cb)
+    #om_sq = np.square(omega)
+    #cu_sq = np.square(cu)
+    #cb_sq = np.square(cb)
     alpha = h0*h0 / ((hu/2/rhou + hb/2/rhob))
     term1 = -1/(hu*rhou)
     term2 = -1/(hb*rhob)
-    term3 = .5*hu*om_sq / cu_sq / rhou
-    term4 = .5*hb*om_sq / cb_sq / rhob
+    term3 = .5*hu*ku_sq / rhou
+    term4 = .5*hb*kb_sq / rhob
     a = alpha*(term1 + term2 + term3 + term4)
     return a
 
@@ -142,7 +134,7 @@ def get_A_size_numba(z_arr, ind_arr):
     a_size = z_arr.size - ind_arr.size # subtract 
     return a_size
 
-def get_A(omega, h_list, z_list, c_list, rho_list, c_hs, rho_hs, lam):
+def get_A(h_list, z_list, k_sq_list, rho_list, k_hs_sq, rho_hs, lam):
     """
     Compute diagonal and off diagonal terms for the matrix
     required in the Sturm sequence solution method
@@ -152,14 +144,12 @@ def get_A(omega, h_list, z_list, c_list, rho_list, c_hs, rho_hs, lam):
     d[i] is the element of the matrix directly beneath a[i]
     e[i] is the element of the matrix directly to the right of a[i]
 
-    omega - float
-        source frequency (rad/s)
     h_list - list of floats
         mesh width for each layer
     z_list - list of 1d numpy ndarrays
         each element is the depths of the c and rho vals
-    c_list - list of 1d numpy ndarrays
-        each element is the discretized SSP array for each layer
+    k_sq_list - list of 1d numpy ndarrays
+        each element is the local wavenumber squared k^2(z) = (omega / c(z))^2
     rho_list - list of 1d numpy ndarrays
         elements are discretized density for each layer
     c_hs - float
@@ -179,7 +169,7 @@ def get_A(omega, h_list, z_list, c_list, rho_list, c_hs, rho_hs, lam):
         First compute the diagonal terms 
         """
         z = z_list[i]
-        c = c_list[i]
+        k_sq = k_sq_list[i]
         h = h_list[i]
         rho = rho_list[i]
 
@@ -188,26 +178,26 @@ def get_A(omega, h_list, z_list, c_list, rho_list, c_hs, rho_hs, lam):
         interface and going down to the grid point above the bottom of the layer interface
         Then add in line for boundary value
         """
-        a_layer = get_a(omega, h, c, rho, h0) # remember this contains no interface points
+        a_layer = get_a(h, k_sq, rho, h0) # remember this contains no interface points
         a_inds = (upper_layer_ind, upper_layer_ind + z.size-2) # z includes the interface points, so exclude those...
         a_diag[a_inds[0]:a_inds[1]] = a_layer[:]
 
         """ Now add the final entry for the interface beneath the layer """
         hu = h
         rhou = rho[-1]
-        cu = c[-1]
+        ku_sq = k_sq[-1]
 
         """ If it's not the bottom halfspace """
         if i < num_layers - 1: 
             hb = h_list[i+1]
             rhob = rho_list[i+1][0]
-            cb = c_list[i+1][0]
-            a_bdry = get_a_bdry(omega, hu, hb, cu, rhou, cb, rhob, h0)
+            kb_sq = k_sq_list[i+1][0]
+            a_bdry = get_a_bdry(hu, hb, ku_sq, rhou, kb_sq, rhob, h0)
 
         else: # last layer
             rhob =rho_hs
-            cb = c_hs
-            a_bdry = get_a_last(omega, hu, cu, rhou, cb, rhob, h0, lam)
+            kb_sq = k_hs_sq
+            a_bdry = get_a_last(hu, ku_sq, rhou, kb_sq, rhob, h0, lam)
         a_diag[a_inds[1]] = a_bdry
 
         """ Now compute off diagonal terms """
@@ -230,7 +220,7 @@ def get_A(omega, h_list, z_list, c_list, rho_list, c_hs, rho_hs, lam):
     return a_diag, e1, d1
 
 @njit
-def get_A_numba(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam):
+def get_A_numba(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam):
     """
     the arrays are the concatenated list elements in the equivalent function above
     ind_arr gives the index of the ith layer
@@ -251,12 +241,12 @@ def get_A_numba(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam)
         """
         if i < num_layers-1:
             z = z_arr[ind_arr[i]:ind_arr[i+1]]
-            c = c_arr[ind_arr[i]:ind_arr[i+1]]
+            k_sq = k_sq_arr[ind_arr[i]:ind_arr[i+1]]
             h = h_arr[i]
             rho = rho_arr[ind_arr[i]:ind_arr[i+1]]
         else:
             z = z_arr[ind_arr[i]:]
-            c = c_arr[ind_arr[i]:]
+            k_sq = k_sq_arr[ind_arr[i]:]
             h = h_arr[i]
             rho = rho_arr[ind_arr[i]:]
         """ 
@@ -264,26 +254,26 @@ def get_A_numba(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam)
         interface and going down to the grid point above the bottom of the layer interface
         Then add in line for boundary value
         """
-        a_layer = get_a(omega, h, c, rho, h0) # remember this contains no interface points
+        a_layer = get_a(h, k_sq, rho, h0) # remember this contains no interface points
         a_inds = (upper_layer_ind, upper_layer_ind + z.size-2) # z includes the interface points, so exclude those...
         a_diag[a_inds[0]:a_inds[1]] = a_layer[:]
 
         """ Now add the final entry for the interface beneath the layer """
         hu = h
         rhou = rho[-1]
-        cu = c[-1]
+        ku_sq = k_sq[-1]
 
         """ If it's not the bottom halfspace """
         if i < num_layers - 1: 
             hb = h_arr[i+1]
             rhob = rho_arr[ind_arr[i+1]]
-            cb = c_arr[ind_arr[i+1]]
-            a_bdry = get_a_bdry(omega, hu, hb, cu, rhou, cb, rhob, h0)
+            kb_sq = k_sq_arr[ind_arr[i+1]]
+            a_bdry = get_a_bdry(hu, hb, ku_sq, rhou, kb_sq, rhob, h0)
 
         else: # last layer
             rhob =rho_hs
-            cb = c_hs
-            a_bdry = get_a_last(omega, hu, cu, rhou, cb, rhob, h0, lam)
+            kb_sq = k_hs_sq
+            a_bdry = get_a_last(hu, ku_sq, rhou, kb_sq, rhob, h0, lam)
         a_diag[a_inds[1]] = a_bdry
 
         """ Now compute off diagonal terms """

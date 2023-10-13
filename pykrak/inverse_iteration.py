@@ -122,7 +122,7 @@ def single_layer_sq_norm(om_sq, phi, h, depth_ind, rho):
     return layer_norm_sq, depth_ind
 
 @njit
-def normalize_phi(phi, krs, omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs):
+def normalize_phi(omega, phi, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs):
     num_layers = ind_arr.size
     num_modes = phi.shape[-1]
     om_sq = np.square(omega)
@@ -142,7 +142,7 @@ def normalize_phi(phi, krs, omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, 
     """
     Now get the halfspace term
     """
-    gamma_m = np.sqrt(np.square(krs) - np.square(omega / c_hs))
+    gamma_m = np.sqrt(np.square(krs) - k_hs_sq)
     norm_sq += np.square(phi[-1,:]) / 2 / gamma_m / rho_hs / om_sq
     rn = om_sq * norm_sq
 
@@ -164,7 +164,7 @@ def normalize_phi(phi, krs, omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, 
     return phi
 
 @njit
-def get_phi(krs, omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs):
+def get_phi(omega, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs):
     A_size = get_A_size_numba(z_arr, ind_arr)
     phi = np.zeros((A_size+1, krs.size))
     phi[0,:]=0 # first row is zero
@@ -172,9 +172,9 @@ def get_phi(krs, omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs):
     for i in range(len(krs)):
         kr = krs[i]
         lam = np.square(h0*kr)
-        a, e1, d1 = get_A_numba(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam)
+        a, e1, d1 = get_A_numba(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam)
         eig = inverse_iter(a, e1, d1, lam)
         phi[1:,i] = eig
-    phi = normalize_phi(phi, krs, omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs) 
+    phi = normalize_phi(omega, phi, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs) 
     return phi
         

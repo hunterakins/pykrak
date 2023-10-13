@@ -1,9 +1,9 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from pykrak.sturm_seq import get_comp_krs, get_krs, get_arrs
+from pykrak.sturm_seq import get_comp_krs, get_krs, get_arrs, cat_list_to_arr
 from pykrak.shooting_routines import shoot_first_layer, shoot_from_bottom
 from pykrak.inverse_iteration import get_phi
-from pykrak.attn_pert import add_attn, get_attn_conv_factor
+from pykrak.attn_pert import add_attn, get_attn_conv_factor, get_c_imag
 from pykrak.group_pert import get_ugs
 import numba as nb
 """ Description:
@@ -43,14 +43,15 @@ class Modes:
         self.M = M
         self.z = z
 
-    def get_phi_zr(self, zr):
+    def get_phi_zr(self, zr, M=None):
         """
         Interpolate modes over array depths zr
         """
         phi = self.phi
         if np.all(phi==0):
             phi = self.get_phi()
-        M = self.M
+        if M is None:
+            M = self.M
         phi_zr = np.zeros((zr.size, M))
         phi_z = self.z
         for i in range(M):
@@ -124,6 +125,7 @@ class Env:
             conv_factor = get_attn_conv_factor(self.attn_units, *args)
         else:
             raise ValueError('Unsupported attenuation unit')
+        self.conv_factor= conv_factor
         return conv_factor
 
     def add_freq(self,freq):
@@ -182,6 +184,8 @@ class Env:
         c_list = []
         rho_list = []
         attn_list = []
+        k_sq_list = []
+        #attn_conv_factor = self.add_attn_conv_factor()
         for i in range(len(N_list)):
             N = N_list[i]
             #print('N', N)
@@ -193,11 +197,21 @@ class Env:
             new_c = np.interp(new_z, z, c)            
             new_rho = np.interp(new_z, z, rho)            
             new_attn = np.interp(new_z, z, attn)            
+
+            # get k_sq
+            if np.any(new_attn != 0):
+                #tmp_c_imag = attn_conv_factor * new_attn / (self.omega) * new_c**2 # cimag = alpha (npm) / omega * c^2
+                tmp_c_imag = get_c_imag(new_c,  new_attn, self.attn_units, self.omega)
+                k_sq = self.omega**2  / (new_c + 1j * tmp_c_imag)**2
+            else:
+                k_sq = self.omega**2  / new_c**2 + 0j
+
             z_list.append(new_z)
             c_list.append(new_c)
             attn_list.append(new_attn)
             rho_list.append(new_rho)
-        return z_list, c_list, rho_list, attn_list
+            k_sq_list.append(k_sq)
+        return z_list, c_list, rho_list, attn_list, k_sq_list
 
     def get_krs(self, verbose=False, **kwargs):
         """
@@ -253,19 +267,27 @@ class Env:
             factor = int(np.power(2.0, i))
             curr_N_list = [(x-1)*factor+1 for x in N_list]
             #print('curr_N_list', curr_N_list)
-            tmp_z_list, tmp_c_list, tmp_rho_list, tmp_attn_list = self.interp_env_vals(curr_N_list)
+            tmp_z_list, tmp_c_list, tmp_rho_list, tmp_attn_list, tmp_k_sq_list = self.interp_env_vals(curr_N_list)
             curr_h_list = [x[1] - x[0] for x in tmp_z_list]
-            h_arr, ind_arr, z_arr, c_arr, rho_arr = get_arrs(curr_h_list, tmp_z_list, tmp_c_list, tmp_rho_list)
+            h_arr, ind_arr, z_arr, k_sq_arr, rho_arr = get_arrs(curr_h_list, tmp_z_list, tmp_k_sq_list, tmp_rho_list)
             h0 = h_arr[0]
+
+            # attenuation for halfpspace
+            attn_conv_factor = self.add_attn_conv_factor()
+            #tmp_c_imag_hs = (attn_conv_factor * self.attn_hs) / (self.omega) * self.c_hs**2
+            tmp_c_imag_hs = get_c_imag(self.c_hs, self.attn_hs, self.attn_units, self.omega)
+
+            k_hs_sq = self.omega**2 / (self.c_hs + 1j * tmp_c_imag_hs)**2
 
             # get wavenumbers for this mesh
             lam_min = np.square(h0*kr_min) 
             lam_max = np.square(h0*kr_max) 
-            krs = get_comp_krs(self.omega, h_arr, ind_arr, z_arr, c_arr, rho_arr,\
-                         self.c_hs, self.rho_hs, lam_min, lam_max)
-            krs = krs[::-1] # largest to smallest
+            krs = get_comp_krs(h_arr, ind_arr, z_arr, k_sq_arr.real, rho_arr,\
+                         k_hs_sq, self.rho_hs, lam_min, lam_max)
             krs = np.array(krs) 
             kr_meshes.append(krs)
+
+            gammas = np.sqrt(krs**2 - k_hs_sq)
 
             M = min(M,krs.size) # keep track of number of modes
             if M == 0:
@@ -322,10 +344,10 @@ class Env:
             conv_factor = self.add_attn_conv_factor()
             self.krs = krs
             phi = self.get_phi(N_list)  # need phi to compute attenuation
-            tmp_z_list, tmp_c_list, tmp_rho_list, tmp_attn_list = self.interp_env_vals(N_list)
+            tmp_z_list, tmp_c_list, tmp_rho_list, tmp_attn_list, tmp_k_sq_list = self.interp_env_vals(N_list)
             h_list = [x[1] - x[0] for x in tmp_z_list]
             tmp_attn_list, tmp_attn_hs = [conv_factor*x for x in tmp_attn_list], conv_factor*self.attn_hs
-            krs = add_attn(self.omega, krs, phi, h_list, tmp_z_list, tmp_c_list, tmp_rho_list, tmp_attn_list, self.c_hs, self.rho_hs, tmp_attn_hs)
+            krs = add_attn(self.omega, krs, phi, h_list, tmp_z_list, tmp_k_sq_list, tmp_rho_list, k_hs_sq, self.rho_hs)
             
         else:
             self.krs = krs
@@ -349,10 +371,14 @@ class Env:
                 N_list  = self.get_N_list()  
             else: # manual grid number
                 pass
-            z_list, c_list, rho_list, attn_list = self.interp_env_vals(N_list)
+            z_list, c_list, rho_list, attn_list, k_sq_list = self.interp_env_vals(N_list)
             h_list = [x[1] - x[0] for x in z_list]
-            h_arr, ind_arr, z_arr, c_arr, rho_arr = get_arrs(h_list, z_list, c_list, rho_list)
-            phi = get_phi(krs, self.omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, self.c_hs, self.rho_hs)
+            h_arr, ind_arr, z_arr, k_sq_arr, rho_arr = get_arrs(h_list, z_list, k_sq_list, rho_list)
+            c_hs = self.c_hs
+            self.add_attn_conv_factor()
+            c_hs_imag = self.attn_hs * self.conv_factor  / self.omega * c_hs**2
+            k_hs_sq = (self.omega**2) / (c_hs + 1j * c_hs_imag)**2
+            phi = get_phi(self.omega, krs, h_arr, ind_arr, z_arr, k_sq_arr.real, rho_arr, k_hs_sq.real, self.rho_hs)
         self.phi = phi
         self.get_phi_z(N_list)
         return phi
@@ -388,7 +414,7 @@ class Env:
             N_list  = self.get_N_list()  
         else: # manual grid number
             pass
-        z_list, c_list, rho_list, attn_list = self.interp_env_vals(N_list)
+        z_list, c_list, rho_list, attn_list, k_sq_list = self.interp_env_vals(N_list)
         first = True
         for rho_arr in rho_list:
             if first == True:
@@ -416,7 +442,7 @@ class Env:
             N_list  = self.get_N_list()  
         else: # manual grid number
             pass
-        z_list, c_list, rho_list, attn_list = self.interp_env_vals(N_list)
+        z_list, c_list, rho_list, attn_list, k_sq_list = self.interp_env_vals(N_list)
         h_list = [x[1] - x[0] for x in z_list]
         ugs = get_ugs(self.omega, self.krs.real, self.phi, h_list, z_list, c_list, rho_list, self.c_hs, self.rho_hs)
         self.ugs = ugs
@@ -456,7 +482,6 @@ class Env:
         ax.hlines(self.z_list[-1][-1], min([x.min() for x in self.c_list]), max([x.max() for x in self.c_list]), 'k')
         mean_layer_c = sum([x.mean() for x in self.c_list]) / len(self.c_list)
         ax.text(mean_layer_c , self.z_list[-1][-1] +30 ,  '$c_b$:{0}, \n$\\rho_b$:{1}, \n$\\alpha_b$:{2}'.format(self.c_hs, self.rho_hs, self.attn_hs))
-        print(self.c_list[-1][-1] , self.z_list[-1][-1] + 40)
         return
 
     def shoot_mode(self, kr, zr=None, normalize=False, N_list=None):
@@ -465,7 +490,7 @@ class Env:
             N_list  = self.get_N_list()  
         else: # manual grid number
             pass
-        z_list, c_list, rho_list, attn_list = self.interp_env_vals(N_list)
+        z_list, c_list, rho_list, attn_list, k_sq_list = self.interp_env_vals(N_list)
         h_list = [x[1] - x[0] for x in z_list]
         h0 = h_list[0]
         lam = np.square(h0*kr)
@@ -488,7 +513,7 @@ class Env:
             N_list  = self.get_N_list()  
         else: # manual grid number
             pass
-        z_list, c_list, rho_list, attn_list = self.interp_env_vals(N_list)
+        z_list, c_list, rho_list, attn_list, k_sq_list = self.interp_env_vals(N_list)
         h_list = [x[1] - x[0] for x in z_list]
         h0 = h_list[0]
         lam = np.square(h0*kr)

@@ -111,42 +111,42 @@ def cat_list_to_arr(list_of_arrs):
         final_arr = np.concatenate((final_arr, list_of_arrs[i]))
     return final_arr, ind_arr
 
-def get_arrs(h_list, z_list, c_list, rho_list):
+def get_arrs(h_list, z_list, k_sq_list, rho_list):
     """
     Convert env_lists to arrays for numba-ing
     """
     h_arr = np.array(h_list)
     z_arr, ind_arr = cat_list_to_arr(z_list)
-    c_arr, ind_arr = cat_list_to_arr(c_list)
+    k_sq_arr, ind_arr = cat_list_to_arr(k_sq_list)
     rho_arr, ind_arr = cat_list_to_arr(rho_list)
-    return h_arr, ind_arr, z_arr, c_arr, rho_arr
+    return h_arr, ind_arr, z_arr, k_sq_arr, rho_arr
     
-@njit(nb.f8(nb.f8, float_arr_type, int_arr_type, float_arr_type, float_arr_type, float_arr_type, nb.f8, nb.f8, nb.f8))
-def get_sturm_seq(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam):
+@njit(nb.f8(float_arr_type, int_arr_type, float_arr_type, float_arr_type, float_arr_type, nb.c16, nb.f8, nb.f8))
+def get_sturm_seq(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam):
     """
     Compute sturm sequence  for given parameters
     Return final element and number of eigenvalues greater than lam
     """
 
-    a_diag, e1, d1 = get_A_numba(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam)
+    a_diag, e1, d1 = get_A_numba(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam)
     
     sturm_seq, count = sturm_subroutine(a_diag, e1, d1, lam)
     return sturm_seq[-1]
 
-@njit(float_arr_type(nb.f8, float_arr_type, int_arr_type, float_arr_type, float_arr_type, float_arr_type, nb.f8, nb.f8, nb.f8))
-def get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam):
+@njit(float_arr_type(float_arr_type, int_arr_type, float_arr_type, float_arr_type, float_arr_type, nb.c16, nb.f8, nb.f8))
+def get_sturm_seq_count(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam):
     """
     Compute sturm sequence  for given parameters
     Return final element and number of eigenvalues greater than lam
     """
 
-    a_diag, e1, d1 = get_A_numba(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam)
+    a_diag, e1, d1 = get_A_numba(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam)
     
     sturm_seq, count = sturm_subroutine(a_diag, e1, d1, lam)
     return np.array([sturm_seq[-1], count])
 
-@njit(nb.f8(nb.f8, float_arr_type, int_arr_type, float_arr_type, float_arr_type, float_arr_type, nb.f8, nb.f8, nb.f8, nb.f8, nb.f8))
-def layer_brent(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, a, b, t):
+@njit(nb.f8(float_arr_type, int_arr_type, float_arr_type, float_arr_type, float_arr_type, nb.c16, nb.f8, nb.f8, nb.f8, nb.f8))
+def layer_brent(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, a, b, t):
     """
       Licensing:
     
@@ -166,8 +166,8 @@ def layer_brent(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, a, b
 
     sa = a
     sb = b
-    fa = get_sturm_seq(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs,  sa )
-    fb = get_sturm_seq(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs,  sb )
+    fa = get_sturm_seq(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs,  sa )
+    fb = get_sturm_seq(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs,  sb )
 
     c = sa
     fc = fa
@@ -237,7 +237,7 @@ def layer_brent(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, a, b
         else:
             sb = sb - tol
 
-        fb = get_sturm_seq(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs,  sb )
+        fb = get_sturm_seq(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs,  sb )
 
         if ( ( 0.0 < fb and 0.0 < fc ) or ( fb <= 0.0 and fc <= 0.0 ) ):
             c = sa
@@ -249,12 +249,12 @@ def layer_brent(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, a, b
     return value
 
 @njit(cache=True)
-def find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam_max):
+def find_root(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_min, lam_max):
     tol = 1e-16 # close to machine precision
-    root = layer_brent(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam_max, tol)
+    root = layer_brent(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_min, lam_max, tol)
     return root
     
-def get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam_max, N=-1, Nr_max=-1):
+def get_krs(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_min, lam_max, N=-1, Nr_max=-1):
     """
     Recursively bisect the domain, counting the modes in each 
     subdomain and employing Brentq root finder once the number 
@@ -267,17 +267,17 @@ def get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min,
     if h0 != dz0:
         raise ValueError('Mesh grid differs from spacing in h_arr')
     if N == -1: # need to compute total number of modes
-        det, N = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min)
+        det, N = get_sturm_seq_count(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_min)
         if N == 0:
             return np.array([])
     if Nr_max == -1: # there may exist modes beyond what the user wants to compute
-        det, Nr_max = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_max)
+        det, Nr_max = get_sturm_seq_count(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_max)
 
     lam = .5*(lam_min + lam_max)
     if (lam == lam_max) or (lam == lam_min): # this seems to be an error?
         return []
 
-    det, Nr_mid = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam)
+    det, Nr_mid = get_sturm_seq_count(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam)
 
     sub_Nr = Nr_mid - Nr_max # the number greater than lam and less than lam_max
     sub_Nl = N - Nr_mid #  number to the left of the midpoint
@@ -286,40 +286,40 @@ def get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min,
         if sub_Nr == 0: # none less than lam_max and greater than lam
             return [] 
         elif sub_Nr == 1: # one between lam and lam_max
-            kr_right = find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam, lam_max)
+            kr_right = find_root(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam, lam_max)
             kr_right = np.sqrt(kr_right)/h0
             return [kr_right]
         else: # more than one between lam and lam_max
-            kr_right = get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam, lam_max, N, Nr_max=Nr_max)
+            kr_right = get_krs(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam, lam_max, N, Nr_max=Nr_max)
             return kr_right
     elif sub_Nl == 1:
-        kr_left = find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam)
+        kr_left = find_root(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_min, lam)
         kr_left = np.sqrt(kr_left)/h0
         if sub_Nr == 0:
             return [kr_left]
         elif sub_Nr == 1:
-            kr_right = find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam, lam_max)
+            kr_right = find_root(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam, lam_max)
             kr_right = np.sqrt(kr_right)/h0
             return [kr_left, kr_right]
         else:
-            kr_right = get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs,lam, lam_max, N-sub_Nl, Nr_max=Nr_max)
+            kr_right = get_krs(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs,lam, lam_max, N-sub_Nl, Nr_max=Nr_max)
             return [kr_left]+ kr_right
     else: # more then one to the left
-        #kr_left = get_krs(omega, h, z, c, rhow, cb, rhob, avec, lam_min, lam, N, Nr_max=Nr_max+sub_Nr)
-        kr_left = get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam, N, Nr_max=Nr_max + sub_Nr)
+        #kr_left = get_krs(h, z, c, rhow, cb, rhob, avec, lam_min, lam, N, Nr_max=Nr_max+sub_Nr)
+        kr_left = get_krs(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_min, lam, N, Nr_max=Nr_max + sub_Nr)
         if sub_Nr == 0:
             return kr_left
         elif sub_Nr == 1:
-            kr_right = find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam, lam_max)
+            kr_right = find_root(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam, lam_max)
             kr_right = np.sqrt(kr_right)/h0
             return kr_left+ [kr_right]
         else:
-            #kr_right = get_krs(omega, h, z, c, rhow, cb, rhob, avec, lam, lam_max, N-sub_Nl, Nr_max=Nr_max)
-            kr_right = get_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam, lam_max, N-sub_Nl, Nr_max=Nr_max)
+            #kr_right = get_krs(h, z, c, rhow, cb, rhob, avec, lam, lam_max, N-sub_Nl, Nr_max=Nr_max)
+            kr_right = get_krs(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam, lam_max, N-sub_Nl, Nr_max=Nr_max)
             return kr_left+ kr_right
 
 @njit(cache=True)
-def get_comp_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min, lam_max):
+def get_comp_krs(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_min, lam_max):
     """
     Recursively bisect the domain, counting the modes in each 
     subdomain and employing Brentq root finder once the number 
@@ -327,9 +327,9 @@ def get_comp_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam
     """
     h0 = h_arr[0]
     dz0 = z_arr[1] - z_arr[0]
-    det, Nr = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_max)
+    det, Nr = get_sturm_seq_count(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_max)
 
-    det, Nl = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_min)
+    det, Nl = get_sturm_seq_count(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_min)
     M = int(Nl - Nr)
 
     if M == 0:
@@ -349,7 +349,7 @@ def get_comp_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam
 
         for k in range(max_num_bisections):
             lam_prop = .5*(lam1 + lam2)
-            det, N = get_sturm_seq_count(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_prop)
+            det, N = get_sturm_seq_count(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_prop)
 
             Nz = N - Nr # number of zeros in interval from lam_prop to lam_max
             if Nz < i + 1: # move the right boundary
@@ -368,9 +368,9 @@ def get_comp_krs(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam
                 lam_l[i] = lam_prop
                 lam_r[i+1] = lam_prop
                 break
-        root = find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_l[i], lam_r[i])
+        root = find_root(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_l[i], lam_r[i])
         krs[i] = np.sqrt(root)/h0
-    root = find_root(omega, h_arr, ind_arr, z_arr, c_arr, rho_arr, c_hs, rho_hs, lam_l[M-1], lam_r[M-1])
+    root = find_root(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam_l[M-1], lam_r[M-1])
     krs[M-1] = np.sqrt(root)/h0
     return krs
 
