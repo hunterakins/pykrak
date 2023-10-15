@@ -18,6 +18,7 @@ from pykrak.sturm_seq import cat_list_to_arr
 from pykrak.raw_pykrak import get_modes
 from numba import njit
 from pykrak import pressure_calc as pc
+from pykrak.attn_pert import get_c_imag
 
 
 class LinearizedEnv(Env):
@@ -45,6 +46,7 @@ class LinearizedEnv(Env):
         self.c_list = c_list
         self.rho_list = rho_list
         self.attn_list = attn_list
+        self.kr_sq_list = kr_sq_list # complex 
         self.N_list = N_list
         self.h_list = [x[1] - x[0] for x in self.z_list]
         return
@@ -58,6 +60,7 @@ class LinearizedEnv(Env):
         self.c_arr, _  = cat_list_to_arr(self.c_list)
         self.rho_arr, _ = cat_list_to_arr(self.rho_list)
         self.attn_arr, _ = cat_list_to_arr(self.attn_list)
+        self.kr_sq_arr, _ = cat_list_to_arr(self.kr_sq_list)
         return
 
     def add_c_pert_matrix(self, pert_z_arr, pert_c_arr):
@@ -103,12 +106,24 @@ class LinearizedEnv(Env):
         x0 = self.x0
         freq = self.freq
         ind_arr, z_arr, c_arr, rho_arr = self.ind_arr, self.z_arr, self.c_arr, self.rho_arr
+        attn_arr = self.attn_arr
         tmp_c_arr = c_arr + self.pert_c_arr @ x0
+        omega = 2*np.pi*self.freq
+        tmp_c_imag = get_c_imag(tmp_c_arr, attn_arr, self.attn_units, omega)
+        tmp_c_arr = tmp_c_arr + 1j * tmp_c_imag
+        k_sq_arr = omega**2 / tmp_c_arr**2
+
         attn_arr = self.attn_arr
         rho_hs, c_hs, attn_hs = self.rho_hs, self.c_hs, self.attn_hs
+        c_hs_imag = get_c_imag(c_hs, attn_hs, self.attn_units, omega)
+        tmp_c_hs  = c_hs + 1j * c_hs_imag
+        k_hs_sq = omega**2 / tmp_c_hs**2
+
+
         cmin, cmax = self.cmin, self.cmax
         h_arr = self.h_arr
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, tmp_c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+
+        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
         M = krs.size
         self.modes = Modes(self.freq, krs, phi, M, phi_z)
         return self.modes

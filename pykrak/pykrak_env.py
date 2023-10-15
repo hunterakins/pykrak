@@ -287,7 +287,6 @@ class Env:
             krs = np.array(krs) 
             kr_meshes.append(krs)
 
-            gammas = np.sqrt(krs**2 - k_hs_sq)
 
             M = min(M,krs.size) # keep track of number of modes
             if M == 0:

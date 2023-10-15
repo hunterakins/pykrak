@@ -81,6 +81,9 @@ def get_attn_conv_factor(units='npm', *args):
 
 @njit
 def alpha_layer_integral(phim_layer, ki_sq, rho, dz):
+    """
+    Trapezoid rule
+    """
     layer_integrand = ki_sq*np.square(phim_layer)  / rho
     integral = dz*(np.sum(layer_integrand) - .5*layer_integrand[0] - .5*layer_integrand[-1])
     alpha_layer = integral
@@ -150,7 +153,7 @@ def get_layered_attn_integrator(h_arr, ind_arr, z_arr, k1_sq_arr, rho_arr):
     h_arr - array of mesh spacings for each layer
     ind_arr - array of index of first value for each layer
     z_arr - depths of the layer meshes concatenated
-    k1_sq_arr - imaginary part  wavenumber square omega^2 / c^2 for the layer meshes concatenated
+    k1_sq_arr - IMAGINARY part  wavenumber square omega^2 / c^2 for the layer meshes concatenated
     rho_arr - density of the layer meshes concatenated
 
     Output - 
@@ -167,14 +170,13 @@ def get_layered_attn_integrator(h_arr, ind_arr, z_arr, k1_sq_arr, rho_arr):
             k_sq_i = k1_sq_arr[ind_arr[i]:]
             rho_i = rho_arr[ind_arr[i]:]
         integrator_i = get_simpsons_integrator(layer_N[i], h_arr[i])[0,:]
-        integrator_i *= k1_sq_arr / (rho_i)
+        integrator_i *= k_sq_i / (rho_i)
         if i == 0:
             integrator = integrator_i
         else:
             integrator[-1] += integrator_i[0] # phi shares points with previous layer
             integrator = np.concatenate((integrator, integrator_i[1:]))
     return integrator
-
 
 @njit
 def add_arr_attn(omega, krs, phi, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs):
@@ -185,7 +187,7 @@ def add_arr_attn(omega, krs, phi, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs
         krm = krs[m]**2
         phim = phi[:,m]
         # integate through layers
-        alpha = np.sum(np.square(phim) * integrator) / krm
+        alpha = np.sum(np.square(phim) * integrator)
 
         # add contribution from tail
         gamma = np.sqrt(np.square(krm) - k_hs_sq).real
