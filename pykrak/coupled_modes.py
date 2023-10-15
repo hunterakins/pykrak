@@ -33,10 +33,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import numpy as np
 from matplotlib import pyplot as plt
 from interp import interp
-from numba import jit
+from numba import jit, njit
 from pykrak.attn_pert import get_c_imag
 
-#@jit
+@njit
 def advance_a(a0, krs0, r0, r1):
     """
     Advance the mode amplitudes to the new interface at 
@@ -46,7 +46,7 @@ def advance_a(a0, krs0, r0, r1):
     a0_adv = a0*range_dep
     return a0_adv
 
-#@jit
+@njit
 def compute_p_left(a0, krs0, phi0, r0, r1):
     """
     Given amplitudes a0 of modes at range r0
@@ -65,7 +65,7 @@ def compute_p_left(a0, krs0, phi0, r0, r1):
     p_left = np.sum(weighted_modes, axis=1)
     return p_left
 
-#@jit
+@njit
 def compute_p_weighted_left(a0, krs0, phi0, r0, r1):
     """
     Given amplitude a0 of modes at range r0
@@ -79,7 +79,7 @@ def compute_p_weighted_left(a0, krs0, phi0, r0, r1):
     p_weighted_left = compute_p_left(tmp_a0, krs0, phi0, r0, r1)
     return p_weighted_left
 
-#@jit
+@njit
 def get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, gammas1):
     """
     The grids from a mode run end at the lower halfspace which may differ from segment to segment
@@ -90,20 +90,13 @@ def get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, g
     Z1 = np.max(z1)
     Z0 = np.max(z0)
 
-    #plt.figure()
-    #plt.plot(phi0[::1, 0], z0[::1], label='phi0')
-    #plt.plot(phi1[::1, 0], z1[::1], label='phi1')
-
-    #plt.plot(phi0[::1, -1], z0[::1], label='phi0')
-    #plt.plot(phi1[::1, -1], z1[::1], label='phi1')
-
-
     if Z1 > Z0: # need to extend modes from z0
         z_extra = z1[z1 > Z0]
         rho_extra = rho_hs0 * np.ones(z_extra.size)
-        phi_extra = np.exp(-gammas0[None,:] * (z_extra[:,None] - Z0))* phi0[-1,:]
+        tg = np.reshape(gammas0, (1, gammas0.size))
+        tz = np.reshape(z_extra, (z_extra.size, 1))
+        phi_extra = np.exp(-tg * (tz - Z0))* phi0[-1,:]
         new_z0 = np.concatenate((z0, z_extra)) # be careful here because arrays are mutable...
-        #phi0 = np.vstack((phi0, phi_extra))
         # this approach should maintain contiguity
         new_phi0 = np.zeros((new_z0.size, phi0.shape[1]))
         new_phi0[:z0.size, :] = phi0.copy()
@@ -114,9 +107,10 @@ def get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, g
     elif Z0 > Z1: # need to extend modes from z1
         z_extra = z0[z0 > Z1]
         rho_extra = rho_hs1 * np.ones(z_extra.size)
-        phi_extra = np.exp(-gammas1[None,:] * (z_extra[:,None] - Z1))* phi1[-1,:]
+        tg = np.reshape(gammas1, (1, gammas1.size))
+        tz = np.reshape(z_extra, (z_extra.size, 1))
+        phi_extra = np.exp(-tg * (tz - Z1))* phi1[-1,:]
         z1 = np.concatenate((z1, z_extra))
-        #phi1 = np.vstack((phi1, phi_extra))
         new_phi1 = np.zeros((z1.size, phi1.shape[1]))
         new_phi1[:phi1.shape[0], :] = phi1.copy()
         new_phi1[phi1.shape[1]:, :] = phi_extra.copy()
@@ -129,20 +123,10 @@ def get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, g
     phi0_new = np.zeros((z1.size, phi0.shape[1]))
     for i in range(phi0.shape[1]):
         phi0_new[:,i] = interp.vec_lin_int(z1, z0, phi0[:,i])
-
-
-    #plt.plot(phi0_new[::1, 0], z1[::1], label='phi0 after')
-    #plt.plot(phi1[::1, 0], z1[::1], label='phi1 after')
-    #plt.plot(phi0_new[::1, -1], z1[::1], label='phi0 after')
-    #plt.plot(phi1[::1, -1], z1[::1], label='phi1 _after')
-    #plt.legend()
-    #plt.gca().invert_yaxis()
-    #plt.show()
-
     return z1, rho0_new, phi0_new, rho1, phi1
 
-#@jit
-def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z1, rho1, rho_hs1, r0, r1, same_grid):
+@njit
+def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z1, rho1, rho_hs1, r0, r1, same_grid, cont_part_velocity=True):
     """
     Given vector of amplitudes a0
     modal information in the left segment
@@ -161,13 +145,16 @@ def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z
         range at which the new segment begines (and therefore the interface between left and right segments)
     same_grid - Boolean
         flag to indicate whether or not the grid is equal for all ranges
+    cont_part_velocity - Boolean
+        True to enforce continuity of particle velocity at segment interfaces
+        Set to False to do comparisons with KRAKEN
     """
     Z1 = np.max(z1) # get these before updating them in get on same grid...
     Z0 = np.max(z0)
     if not same_grid: # need to interpolate
         z1, rho0, phi0, rho1, phi1 = get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, gammas1)
     Z1_new = np.max(z1)
-    a0_adv = advance_a(a0, krs0, r0, r1) # this is a_m^{(j)} * H_{1m}^{j}(r_{j+1})
+    a0_adv = advance_a(a0, krs0, r0, r1) # 
     p_left = np.sum(a0_adv * phi0, axis=1)
     a0_adv_weighted = krs0 * a0_adv
     p_weighted_left = np.sum(a0_adv_weighted * phi0, axis=1)
@@ -182,7 +169,7 @@ def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z
     for l in range(M1):
         phi1_l = phi1[:,l]
         # first integrate down to Z1_new
-        term1 = np.trapz(p_left / rho1 * phi1_l, z1) # modes are normalized using trapezoid rule so this should be good
+        term1 = np.trapz(p_left / rho1 * phi1_l, z1) #
         # now add the contribution to the integral from the tail
         tail1 = 1 / rho_hs1 * phi1_l[-1] * np.exp(-gammas1[l] *(Z1_new - Z1)) * np.sum(tail_values   / (gammas1[l] + gammas0))
         term1 += tail1
@@ -191,14 +178,15 @@ def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z
         term2 = np.trapz(p_weighted_left / rho0 * phi1_l, z1)
         tail2 = 1 / rho_hs0 * phi1_l[-1] * np.exp(-gammas1[l] *(Z1_new - Z1)) * np.sum(tail_values_weighted   / (gammas1[l] + gammas0))
         term2 += tail2
-
         term2 /= krs1[l]
-
-        al = 0.5*(term1 + term2)
+        if cont_part_velocity:
+            al = 0.5*(term1 + term2)
+        else:
+            al = term1
         anew[l] = al
     return anew
 
-def compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rgrid, zs, zr, rs, same_grid):
+def compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rgrid, zs, zr, rs, same_grid, cont_part_velocity=True):
     """
     Compute the pressure field at the receiver depths in zr
     Due to the source at zs 
@@ -216,12 +204,13 @@ def compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_
     rho_hs0 = rho_hs_list[0]
     c_hs0 = c_hs_list[0]
     gammas0 = np.sqrt(krs0**2 - (omega**2 / c_hs0**2)).real
+    gammas0 = np.ascontiguousarray(gammas0)
    
     phi_zs = np.zeros((krs0.size))
     for i in range(krs0.size):
         phi_zs[i] = interp.lin_int(zs, zgrid0, phi0[:,i])
     # the initial value is a bit 
-    a0 = phi_zs * np.exp(-1j * krs0 * rgrid[1]) / np.sqrt(krs0.real) 
+    a0 = phi_zs * np.exp(-1j * krs0 * rgrid[1]) / np.sqrt(krs0) 
     a0 *= 1j*np.exp(1j*np.pi/4) # assumes rho is 1 at source depth
     a0 /= np.sqrt(8*np.pi)
 
@@ -237,6 +226,7 @@ def compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_
         c_hs0 = c_hs_list[i-1]
         krs0 = krs_list[i-1]
         gammas0 = np.sqrt(krs0**2 - (omega**2 / c_hs0**2)).real
+        gammas0 = np.ascontiguousarray(gammas0)
 
         if rs <= r1: # source is in this segment
             if i == 1:
@@ -257,17 +247,19 @@ def compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_
             c_hs1 = c_hs_list[i]
             krs1 = krs_list[i]
             gammas1 = np.sqrt(krs1**2 - (omega**2 / c_hs1**2)).real
-            if i == 1: # first segment is different than all the rest
-                a0 = update_a0(a0, krs0, gammas0, phi0, zgrid0, rho0, rho_hs0, krs1, gammas1, phi1, zgrid1, rho1, rho_hs1, r1, r1, same_grid)
+            gammas1 = np.ascontiguousarray(gammas1)
+            if i == 1: # first segment is special case (phase of a0 is for source-receiver range equal to the first segment length r1)
+                a0 = update_a0(a0, krs0, gammas0, phi0, zgrid0, rho0, rho_hs0, krs1, gammas1, phi1, zgrid1, rho1, rho_hs1, r1, r1, same_grid, cont_part_velocity)
             else:
-                a0 = update_a0(a0, krs0, gammas0, phi0, zgrid0, rho0, rho_hs0, krs1, gammas1, phi1, zgrid1, rho1, rho_hs1, r0, r1, same_grid)
+                a0 = update_a0(a0, krs0, gammas0, phi0, zgrid0, rho0, rho_hs0, krs1, gammas1, phi1, zgrid1, rho1, rho_hs1, r0, r1, same_grid, cont_part_velocity)
     # rs > rgrid[-1] so the source is beyond the last segment
     a0 = advance_a(a0, krs1, r1, rs) 
     p = np.sum(a0 * phi1, axis=1)
     p /= np.sqrt(rs)
     p_zr_real = interp.vec_lin_int(zr, zgrid1, p.real) # zgrid should be very fine so I don't see any issue here...
     p_zr_imag = interp.vec_lin_int(zr, zgrid1, p.imag)
-    return p_zr_real + 1j*p_zr_imag
+    p_zr = p_zr_real + 1j*p_zr_imag
+    return p_zr
 
 def get_seg_interface_grid(rgrid):
     """
