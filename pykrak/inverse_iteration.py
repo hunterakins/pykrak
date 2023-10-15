@@ -12,16 +12,12 @@ Institution: Scripps Institution of Oceanography, UC San Diego
 
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib import rc
-rc('text', usetex=True)
 import matplotlib
-matplotlib.rcParams['mathtext.fontset'] = 'stix'
-matplotlib.rcParams['font.family'] = 'STIXGeneral'
 from numba import njit
 from pykrak.mesh_routines import get_A_size_numba, get_A_numba
 
 
-@njit
+@njit(cache=True)
 def tri_diag_solve(a, e1, d1, w):
     """
     Solve matrix A x = w
@@ -39,31 +35,24 @@ def tri_diag_solve(a, e1, d1, w):
     # 
     e1_new[0] = e1[0]/a[0]
     w_new[0] = w[0]/a[0]
-    #row_sens = []
     for i in range(1, N-1):
         #if np.abs(d1[i-1]) > np.abs(a[i]):
         #    print('should swap rows')
         scale = (a[i] - d1[i-1]*e1_new[i-1])
         e1_new[i] = e1[i] / scale
         w_new[i] = (w[i] - d1[i-1]*w_new[i-1]) / scale
-    #print('AN-2', a[N-1])
-    #print(d1[N-2]*e1_new
     scale = (a[N-1] - d1[N-2] * e1_new[N-2])
     if scale == 0:
         scale = 1e-20
-    #print('scale', scale)
     w_new[N-1]  = (w[N-1] - d1[N-2]*w_new[N-2]) / scale
-    #plt.figure()
-    #plt.plot(w_new)
-    #plt.show()
 
     x[N-1] = w_new[-1] # solution
-    for i in range(1, N-1):
+    for i in range(1, N):
         ind = N - i - 1
         x[ind] = -x[ind+1]*e1_new[ind] + w_new[ind]
     return x
 
-@njit
+@njit(cache=True)
 def inverse_iter(a, e1, d1, lam):
     """
     Use inverse iteration to find the eigenvector 
@@ -94,7 +83,7 @@ def inverse_iter(a, e1, d1, lam):
         print('Warning: max num iterations reached. Eigenvector may be incorrect.')
     return wnext
 
-@njit
+@njit(cache=True)
 def single_layer_sq_norm(om_sq, phi, h, depth_ind, rho):
     """
     Do the integral over a single layer using trapezoid rule
@@ -121,7 +110,7 @@ def single_layer_sq_norm(om_sq, phi, h, depth_ind, rho):
     layer_norm_sq += depth_val #
     return layer_norm_sq, depth_ind
 
-@njit
+@njit(cache=True)
 def normalize_phi(omega, phi, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs):
     num_layers = ind_arr.size
     num_modes = phi.shape[-1]
@@ -142,7 +131,7 @@ def normalize_phi(omega, phi, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_h
     """
     Now get the halfspace term
     """
-    gamma_m = np.sqrt(np.square(krs) - k_hs_sq)
+    gamma_m = np.sqrt(np.square(krs) - k_hs_sq).real
     norm_sq += np.square(phi[-1,:]) / 2 / gamma_m / rho_hs / om_sq
     rn = om_sq * norm_sq
 
@@ -163,10 +152,10 @@ def normalize_phi(omega, phi, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_h
             phi[:,i] *= -1
     return phi
 
-@njit
+@njit(cache=True)
 def get_phi(omega, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs):
     A_size = get_A_size_numba(z_arr, ind_arr)
-    phi = np.zeros((A_size+1, krs.size))
+    phi = np.zeros((A_size+1, krs.size)) # +1 point for the surface point
     phi[0,:]=0 # first row is zero
     h0 = h_arr[0]
     for i in range(len(krs)):
@@ -175,6 +164,7 @@ def get_phi(omega, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_h
         a, e1, d1 = get_A_numba(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam)
         eig = inverse_iter(a, e1, d1, lam)
         phi[1:,i] = eig
+
     phi = normalize_phi(omega, phi, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs) 
     return phi
         
