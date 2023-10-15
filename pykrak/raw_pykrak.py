@@ -30,8 +30,8 @@ import numba as nb
 #int_arr_type = nb.types.Array(nb.i8, 1, 'A', readonly=True)
 #tuple_type = nb.types.Tuple((complex_arr_type, float_arr_type, float_arr_type))
 
-@njit(cache=True)
 #@njit(float_arr_type(int_arr_type, float_arr_type), cache=True)
+@njit(cache=True)
 def get_phi_z(ind_arr, z_arr):
     """
     Remove doubled layer values
@@ -88,8 +88,9 @@ def get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, c
     krs = get_comp_krs(h_arr, ind_arr, z_arr, k_sq_arr.real, rho_arr,\
                  k_hs_sq, rho_hs, lam_min, lam_max)
 
+
     M = min(M,krs.size) # keep track of number of modes
-    phi = get_phi(omega, krs, h_arr, ind_arr, z_arr, k_sq_arr.real, rho_arr, k_hs_sq.real, rho_hs)
+    phi = get_phi(omega, krs, h_arr, ind_arr, z_arr, k_sq_arr.real, rho_arr, k_hs_sq, rho_hs)
 
     """ Factor in attenuation with perturbation theory"""
     #if np.sum(attn_arr) > 0 or attn_hs: # there is attenuation in the model
@@ -97,8 +98,9 @@ def get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, c
         comp_krs = add_arr_attn(omega, krs, phi, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs)
     else:
         comp_krs = krs + 1j*np.zeros(krs.size)
+
     
-    phi_z = get_phi_z(ind_arr, z_arr)
+    phi_z = get_phi_z(ind_arr, z_arr) #this gets rid of double entries in z_arr for layer interfaces
         
     return comp_krs, phi, phi_z
 
