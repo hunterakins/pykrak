@@ -225,12 +225,12 @@ def get_A_numba(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam):
     the arrays are the concatenated list elements in the equivalent function above
     ind_arr gives the index of the ith layer
     so the first element is always zero
-    z_arr[ind_arr[i]] is the first value in the 
+    z_arr[ind_arr[i]] is the first value in the ith layer
     """
     num_layers = h_arr.size
     h0 = h_arr[0]
     #a_size = get_A_size(z_list)
-    a_size = z_arr.size - ind_arr.size # subtract 
+    a_size = z_arr.size - ind_arr.size # don't double count layer interfaces
     a_diag = np.zeros((a_size))
     e1 = np.zeros((a_size)-1) # upper off-diagonal 
     d1 = np.zeros((a_size)-1) # lower off-diagonal 
