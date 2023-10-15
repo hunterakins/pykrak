@@ -19,8 +19,10 @@ from pykrak.test_helpers import get_krak_inputs
 
 from pykrak.linearized_model import LinearizedEnv
 from pyat.pyat import env as pyat_env
+import os
 
 
+os.system('rm cm_log.txt')
 def downslope_test():
     freq = 100.0
     omega = 2*np.pi*freq
@@ -32,8 +34,6 @@ def downslope_test():
     Zmax = Zvals.max()
     rgrid = np.linspace(0.0, R, num_segs)
     rcm_grid = cm.get_seg_interface_grid(rgrid)
-    print(rgrid)
-    print(rcm_grid)
     cw = 1500.0
     rho_w = 1.0
     c_hs = 1800.0
@@ -70,10 +70,20 @@ def downslope_test():
 
 
         env = LinearizedEnv(freq, env_z_list, env_c_list, env_rho_list, env_attn_list, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
+        
         env_list.append(env)
-        krs = np.complex64(env.get_krs())
-        phi = env.get_phi(N_list)
-        zgrid = env.get_phi_z(N_list)
+        env.add_c_pert_matrix(env.z_arr, np.zeros((env.z_arr.size,1)))
+        env.add_x0(np.array([0.0]))
+        #tmp_krs = env.get_krs(**{'N_list': N_list, 'Nh':1})
+        modes = env.full_forward_modes()
+        krs = modes.krs
+        krs_str = krs.astype(str)
+        with open('cm_log.txt', 'a') as f:
+            f.write('Running pykrak for depth {0} with mesh N: {1}\n'.format(Z, N_list))
+            for i in range(krs.size):
+                f.write('{0}  {1}\n'.format(i + 1, krs_str[i]))
+        phi = modes.phi
+        zgrid = modes.z
         rhogrid = env.get_rho_grid(N_list)
     
         krs_list.append(krs)
@@ -92,13 +102,14 @@ def downslope_test():
     ranges = np.linspace(100.0, 10*1e3, 1000)
 
     zout = np.linspace(0.0, Zvals.max(), nmesh_list[-1][0])
-    print(zout[1] - zout[0])
     zr = zout[1:]
     p_arr = np.zeros((zr.size, ranges.size-1), dtype=np.complex128)
-    for i in range(1,ranges.size):
-        rs = ranges[i]
-        p = cm.compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rcm_grid, zs, zr, rs, same_grid)
-        p_arr[:,i-1] = p
+    #for i in range(1,ranges.size):
+    #    rs = ranges[i]
+    #    p = cm.compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rcm_grid, zs, zr, rs, same_grid, cont_part_velocity=False) # False for KRAKEN model comp
+    #    p_arr[:,i-1] = p
+
+    p_arr = cm.compute_arr_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rcm_grid, zs, zr, ranges[1:], same_grid, cont_part_velocity=False) # False for KRAKEN model comp
 
     p_tl = 20*np.log10(np.abs(p_arr)) 
     plt.figure()
@@ -126,7 +137,9 @@ def downslope_test():
     for seg_i in range(num_segs):
         env = env_list[seg_i]
         ssp, bdy = get_krak_inputs(env, twod=True)
+
         NMESH = nmesh_list[seg_i]
+        NMESH = [x-1 for x in NMESH]
         if seg_i == 0:
             append = False
         else:
@@ -153,21 +166,19 @@ def downslope_test():
 
 
     [ PlotTitle, PlotType, freqVec, atten, pos, pressure ] = read_shd('at_files/cm_pekeris_test.shd')
-    print(pressure.shape, pos)
-    print(pos.r.depth)
     pressure = np.squeeze(pressure)
-    pressure /= np.sqrt(2*np.pi)
+    # correct KRAKEN scaling to agree with mine
+    pressure /= np.sqrt(2*np.pi) 
     pressure /= np.sqrt(8 *np.pi)
-    #pressure *= np.exp(1j*np.pi/4)
     k_tl = 20*np.log10(np.abs(pressure))
     kp_100 = pressure[zind,:][1:]
-    zind = np.argmin(np.abs(zout[1:] - 100.0))
+    zind = np.argmin(np.abs(pos.r.depth - 100.0))
     plt.plot(ranges[1:]*1e-3, k_tl[zind,:][1:], 'b')
+
     plt.figure()
     plt.pcolormesh(ranges, zout[1:], k_tl)
     plt.gca().invert_yaxis()
     plt.colorbar()
-    plt.figure()
     fig, axes = plt.subplots(2,1, sharex=True)
     axes[0].plot(ranges[1:]*1e-3, np.abs(p_100), 'k')
     axes[0].plot(ranges[1:]*1e-3, np.abs(kp_100), 'b')

@@ -261,6 +261,94 @@ def compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_
     p_zr = p_zr_real + 1j*p_zr_imag
     return p_zr
 
+def compute_arr_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rgrid, zs, zr, rs_grid, same_grid, cont_part_velocity=True):
+    """
+    Compute the pressure field at the receiver depths in zr
+    Due to the source at zs 
+    receivers at all ranges in rs_grid
+    rgrid is the grid of environmental segment interfaes (see get_seg_interface_grid)
+    rgrid[0] must be 0
+    same_grid - boolean Flag 
+        True if all the modes have been evaluated on same grid (and so interpolation is not necessary)
+    """
+    Nr = zr.size
+    krs0 = krs_list[0]
+    phi0 = phi_list[0]
+    zgrid0 = zgrid_list[0]
+    rho0 = rho_list[0]
+    rho_hs0 = rho_hs_list[0]
+    c_hs0 = c_hs_list[0]
+
+
+    pressure_out = np.zeros((Nr, rs_grid.size), dtype=np.complex128)
+
+    gammas0 = np.sqrt(krs0**2 - (omega**2 / c_hs0**2)).real
+    gammas0 = np.ascontiguousarray(gammas0)
+   
+    phi_zs = np.zeros((krs0.size))
+    for i in range(krs0.size):
+        phi_zs[i] = interp.lin_int(zs, zgrid0, phi0[:,i])
+    # the initial value is a bit 
+    a0 = phi_zs * np.exp(-1j * krs0 * rgrid[1]) / np.sqrt(krs0) 
+    a0 *= 1j*np.exp(1j*np.pi/4) # assumes rho is 1 at source depth
+    a0 /= np.sqrt(8*np.pi)
+
+    rcvr_range_index = 0
+    for i in range(1, rgrid.size):
+        print('i', i)
+        r0 = rgrid[i-1]
+        r1 = rgrid[i]
+
+        phi0 = phi_list[i-1]
+        zgrid0 = zgrid_list[i-1]
+        rho0 = rho_list[i-1]
+        rho_hs0 = rho_hs_list[i-1]
+        c_hs0 = c_hs_list[i-1]
+        krs0 = krs_list[i-1]
+        gammas0 = np.sqrt(krs0**2 - (omega**2 / c_hs0**2)).real
+        gammas0 = np.ascontiguousarray(gammas0)
+
+        while (rcvr_range_index < rs_grid.size) and rs_grid[rcvr_range_index] <= r1:
+            rs = rs_grid[rcvr_range_index]
+            if i == 1:
+                p0 = advance_a(a0, krs0, r1, rs)
+            else:
+                p0 = advance_a(a0, krs0, r0, rs)
+            p = np.sum(p0 * phi0, axis=1)
+            p /= np.sqrt(rs)
+            p_zr_real = interp.vec_lin_int(zr, zgrid0, p.real)
+            p_zr_imag = interp.vec_lin_int(zr, zgrid0, p.imag)
+            pressure_out[:, rcvr_range_index] = p_zr_real + 1j*p_zr_imag
+            rcvr_range_index += 1
+        if rcvr_range_index == rs_grid.size:
+            break
+        # advance a0 to the next segment
+        phi1 = phi_list[i]
+        zgrid1 = zgrid_list[i]
+        rho1 = rho_list[i]
+        rho_hs1 = rho_hs_list[i]
+        c_hs1 = c_hs_list[i]
+        krs1 = krs_list[i]
+        gammas1 = np.sqrt(krs1**2 - (omega**2 / c_hs1**2)).real
+        gammas1 = np.ascontiguousarray(gammas1)
+        if i == 1: # first segment is special case (phase of a0 is for source-receiver range equal to the first segment length r1)
+            a0 = update_a0(a0, krs0, gammas0, phi0, zgrid0, rho0, rho_hs0, krs1, gammas1, phi1, zgrid1, rho1, rho_hs1, r1, r1, same_grid, cont_part_velocity)
+        else:
+            a0 = update_a0(a0, krs0, gammas0, phi0, zgrid0, rho0, rho_hs0, krs1, gammas1, phi1, zgrid1, rho1, rho_hs1, r0, r1, same_grid, cont_part_velocity)
+
+    # now finish for receivers in final segment
+    while rcvr_range_index < rs_grid.size:
+        rs = rs_grid[rcvr_range_index]
+        p0 = advance_a(a0, krs1, r1, rs) 
+        p = np.sum(p0 * phi1, axis=1)
+        p /= np.sqrt(rs)
+        p_zr_real = interp.vec_lin_int(zr, zgrid1, p.real) # zgrid should be very fine so I don't see any issue here...
+        p_zr_imag = interp.vec_lin_int(zr, zgrid1, p.imag)
+        p_zr = p_zr_real + 1j*p_zr_imag
+        pressure_out[:, rcvr_range_index] = p_zr
+        rcvr_range_index += 1
+    return pressure_out
+
 def get_seg_interface_grid(rgrid):
     """
     rgrid is the ranges at which the 
