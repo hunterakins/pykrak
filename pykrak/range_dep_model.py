@@ -42,31 +42,15 @@ def range_interp_krs(rpt, rgrid, kr_arr):
         kr_vals = a*kr_left[kr_inds] + b*kr_right[kr_inds]
     return kr_vals
 
-
 class RangeDepModel:
-    def __init__(self, range_list, env_list, ri=False):#, comm):
+    def __init__(self, range_list, env_list, comm):
         self.env_list = env_list # list of range-independent linearized env obnjects
         self.n_env = len(env_list)
         self.range_list = range_list # list of range that represents the env
-        self.ri = ri
-        #self.comm = comm
+        self.comm = comm
+
 
     def run_models(self, freq, x0_list):
-        """
-        Solve for krs and mode shapes for each environment
-        """
-        modes_list = []
-        for env_i in range(self.n_env):
-            env = self.env_list[env_i]
-            x0 = x0_list[env_i]
-            env.add_freq(freq)
-            env.add_x0(x0)
-            modes = env.full_forward_modes()
-            modes_list.append(modes)
-        self.modes_list = modes_list
-        return modes_list
-
-    def mpi_run_models(self, freq, x0_list):
         """
         Solve for krs and mode shapes for each environment
         """
@@ -77,16 +61,8 @@ class RangeDepModel:
         env.add_freq(freq)
         env.add_x0(x0)
         modes = env.full_forward_modes()
-        modes_list = comm.gather(modes, root=0)
-        for env_i in range(self.n_env):
-            env = self.env_list[env_i]
-            x0 = x0_list[env_i]
-            env.add_freq(freq)
-            env.add_x0(x0)
-            modes = env.full_forward_modes()
-            modes_list.append(modes)
-        if rank == 0:
-            self.modes_list = modes_list
+        modes_list = self.comm.gather(modes, root=0)
+        self.modes_list = modes_list
         return modes_list
 
     def _get_interface_ranges(self):
@@ -128,10 +104,15 @@ class RangeDepModel:
         # insert rs into the grid of model ranges and interpolate kr wavenumbers
         # to that range
         if rs not in rgrid: 
-            kr_vals = range_interp_krs(rpt, rgrid, kr_arr)
-            klo, khi = interp.get_klo_khi(rpt, rgrid)
-            rgrid = np.intert(rgrid, rs, khi)
-            kr_arr = np.insert(kr_arr,  kr_vals, khi, axis=1)
+            kr_vals = range_interp_krs(rs, rgrid, kr_arr)
+            tmp = -1.0*np.ones((M_max), dtype=np.complex128)
+            tmp[:kr_vals.size] = kr_vals
+            kr_vals = tmp
+            klo, khi = interp.get_klo_khi(rs, rgrid)
+            rgrid = np.insert(rgrid, khi, rs)
+            kr_arr = np.insert(kr_arr,  khi, kr_vals, axis=1)
+
+
 
         # now truncate to ranges less than or equal to rs
         inds = rgrid <= rs
@@ -152,16 +133,15 @@ class RangeDepModel:
 
     def get_phi_zs(self, zs, M):
         src_modes = self.modes_list[0]
-        phi_zs = src_modes.get_phi_zr(zs)
-        phi_zs = phi_zs[:,:M]
+        phi_zs = src_modes.get_phi_zr(zs, M)
+        #phi_zs = phi_zs[:,:M]
         return phi_zs
 
     def get_phi_zr(self, zr, M, rgrid, rs):
         rk_rcvr = np.argmin(np.abs(rgrid - rs)) # this is the range-independent segment that the receiver is in
-        rk_src = 0
         rcvr_modes = self.modes_list[rk_rcvr]
-        phi_zr = rcvr_modes.get_phi_zr(zr)
-        phi_zr = phi_zr[:,:M]
+        phi_zr = rcvr_modes.get_phi_zr(zr, M)
+        #phi_zr = phi_zr[:,:M]
         return phi_zr
 
 
