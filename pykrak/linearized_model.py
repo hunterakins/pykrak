@@ -21,8 +21,9 @@ from pykrak import pressure_calc as pc
 
 
 class LinearizedEnv(Env):
-    def __init__(self, z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs,attn_units, N_list, cmin, cmax):
+    def __init__(self, freq, z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs,attn_units, N_list, cmin, cmax):
         super().__init__(z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs,attn_units)
+        self.add_freq(freq)
         self._fix_mesh(N_list)
         self._get_env_arrs()
         self.cmin = cmin
@@ -32,13 +33,14 @@ class LinearizedEnv(Env):
         self.modes = None
         self.phi_zs = None
         self.phi_zr = None
+        self.x0 = None
 
     def _fix_mesh(self, N_list):
         """
         Fix the mesh of the model
         """
         self.N_list = N_list
-        z_list, c_list, rho_list, attn_list = self.interp_env_vals(N_list)
+        z_list, c_list, rho_list, attn_list, kr_sq_list = self.interp_env_vals(N_list)
         self.z_list = z_list
         self.c_list = c_list
         self.rho_list = rho_list
@@ -205,7 +207,7 @@ def test1():
     N_list = [int((x[-1] - x[0]) / dz) for x in z_list1]
     cmin = c_list1[0].min()
     cmax = c_list1[1].max()
-    env = LinearizedEnv(z_list1, c_list1, rho_list1, attn_list1, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
+    env = LinearizedEnv(freq, z_list1, c_list1, rho_list1, attn_list1, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
     
     z_arr =env.z_arr
     pert_c_arr = np.zeros((z_arr.size, 2))
@@ -214,7 +216,6 @@ def test1():
 
     env.add_c_pert_matrix(z_arr,pert_c_arr)
     env.add_x0(np.zeros(2))
-    env.add_freq(freq)
 
     now = time.time()
     env.full_forward_modes()

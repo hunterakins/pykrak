@@ -1,10 +1,9 @@
 """
 Description:
 Routines for coupled mode field calculation
-Follows the forward scattering, sequential approach used in Kraken
-Specifically, it updates the modal weights used to calculate pressure 
-by enforcing continuity of pressure at each interface between range-independent
-segments
+Follows the one-way single scattering approach in JKPS (equation 5.264)
+Note that this differs from KRAKEN, which I believe only enforces continuity of pressure. 
+This approach here enforces both continuity of pressure and of radial particle velocity.
 
 Has not been tested
 
@@ -33,264 +32,252 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib import rc
-rc('text', usetex=True)
-import matplotlib
-matplotlib.rcParams['mathtext.fontset'] = 'stix'
-matplotlib.rcParams['font.family'] = 'STIXGeneral'
+from interp import interp
+from numba import jit
+from pykrak.attn_pert import get_c_imag
 
-def get_pressure(phi_zr, phi_zs, krs, r, tilt_angle=0, zr=None):
+#@jit
+def advance_a(a0, krs0, r0, r1):
     """
-    Consistent with fourier transform of the form
-    P(\omega) = \int_{-\infty}^{\infty} p(t) e^{- i \omega t} \dd t
-    From modes evaluated at receiver depths,
-    evaluated at source depth, 
-    wavenumbers kr, and source range r
-    Return pressure as column vector
-    Positive angle means it's leaning towards the source, 
-    the lowest element of the array is always located at a range r 
-    (so it's sort of the fixed point)
-    Positive angle in DEGREES 
-    Input
-    phi_zr - np 2d array
-        first axis is receiver depth, second is mode number
-        amplitude of modes at receivers
-    phi_zs - np 2d array
-        I think first axis is usually just a single depth value?
-        Second is mode number
-    krs - np 1d array
-        horizontal wavenumbers
-    r - float
-        source range
-    tilt_angle - optional int/ float
-        Array tilt. Positive means array isleaning towards the source (top element is closer than bott. eleent
-    zr - optional
-        If providing tilt, I need array positions
+    Advance the mode amplitudes to the new interface at 
+    r=r1 from their value at r=r0
     """
-    modal_matrix = phi_zs*phi_zr
-    if tilt_angle != 0:
-        Z = np.max(zr) - zr
-        deltaR = Z*np.tan(tilt_angle * np.pi / 180.)
-        deltaR = deltaR.reshape(zr.size,1)
-        r = r - deltaR #  minus so that it leans towards the source (range gets closer)
-        krs = krs.reshape(1, krs.size)
-        range_arg = krs * r
-        range_dep = np.exp(-1j*range_arg) / np.sqrt(range_arg.real)
-        prod = modal_matrix*range_dep
-        p = np.sum(prod, axis=1)[:, np.newaxis]
-    else:
-        range_dep = np.exp(-1j*r*krs) / np.sqrt(krs.real*r)
-        range_dep = range_dep.reshape(krs.size,1)
-        p = modal_matrix@range_dep
-    p *= np.exp(1j*np.pi/4)
-    p /= np.sqrt(8*np.pi)
-    return p
+    range_dep = np.exp(-1j * krs0 * (r1 - r0)) #* np.sqrt(r0 / r1)
+    a0_adv = a0*range_dep
+    return a0_adv
 
-def get_interface_pts(rgrid):
-    """ 
-    Given a range-dependent environment with N updated points
-    given in rgrid, break the transect into N range-independent segments
-    defined by N-1 interface points r_int_grid
-    Input 
-    rgrid - np 1d array
-        points r at which the environment is updated
-    Output 
-    r_int_grid  - np 1d array
-        points of the interface between the range-independent subsegments
+#@jit
+def compute_p_left(a0, krs0, phi0, r0, r1):
     """
-    r_int_grid = (rgrid[1:] + rgrid[:-1]) / 2
-    return r_int_grid
+    Given amplitudes a0 of modes at range r0
+    wavenumbers and modes in krs0 and phi0
+    defined in the region between r0 and r1
 
-def compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rgrid, zs, zr, rs):
+    Compute the pressure field at the interface range r1
+
+    Note here that the convention is that the range dependence does not 
+    include the 1/sqrt(km) terms
+    This must be accounted for in the initial condition for the amplitudes 
+    in the first segment
     """
-    krs_list - list of krs for range-independent segments
-    phi_list - list of mode shape functions for range-independent segments
-    zgrid_list - list of z grids for the mode shapes (and pressure fields)
-            for each range-independent segments
-    rho_list - list of rho grid for the range-independent segs
-    rgrid consists of the points for which the range-dependent model
-    is specified (range-indendependent segments bracket each point)
-    zs - source depth
-    zr - receiver depths
-    rs - receiver range (transect starts at source, so first point in grid is the 
-        environment at source position)
+    a0_adv = advance_a(a0, krs0, r0, r1) 
+    weighted_modes = a0_adv * phi0
+    p_left = np.sum(weighted_modes, axis=1)
+    return p_left
 
-    A will be used to keep track of the weights 
-        like in KRAKEN, it is basically the weights "a" in e.g. eq. 239 in JKPS
-        but also with the phase at the beginning of the interface 
-    P holds the pressure at the interface ranges as computed from the segment to the left
-        (we march left to right)
-        P is weighted by the grid spacing and the density at the grid points...
-        It is then interpolated onto the new grid before updating...
+#@jit
+def compute_p_weighted_left(a0, krs0, phi0, r0, r1):
     """
+    Given amplitude a0 of modes at range r0
+    wavenumbers and modes in krs0 and phi0
+    defined in the region between r0 and r1
 
-    # get interface ranges (halfway between profile points)
-    ri_pts = get_interface_pts(rgrid)
+    Compute the weighted pressure field required to enforce continuity
+    of radial particle velocity at the interface range r1
+    """
+    tmp_a0 = a0 * krs0
+    p_weighted_left = compute_p_left(tmp_a0, krs0, phi0, r0, r1)
+    return p_weighted_left
+
+#@jit
+def get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, gammas1):
+    """
+    The grids from a mode run end at the lower halfspace which may differ from segment to segment
+    This function interpolates the modes and densities onto the same grid using the 
+    exponentially decaying tail
+    of the modes in the halfspace to extend the shallower grid
+    """
+    Z1 = np.max(z1)
+    Z0 = np.max(z0)
+
     #plt.figure()
-    #plt.plot(rgrid, 'k+')
-    #plt.plot(ri_pts, 'b+')
+    #plt.plot(phi0[::1, 0], z0[::1], label='phi0')
+    #plt.plot(phi1[::1, 0], z1[::1], label='phi1')
+
+    #plt.plot(phi0[::1, -1], z0[::1], label='phi0')
+    #plt.plot(phi1[::1, -1], z1[::1], label='phi1')
+
+
+    if Z1 > Z0: # need to extend modes from z0
+        z_extra = z1[z1 > Z0]
+        rho_extra = rho_hs0 * np.ones(z_extra.size)
+        phi_extra = np.exp(-gammas0[None,:] * (z_extra[:,None] - Z0))* phi0[-1,:]
+        new_z0 = np.concatenate((z0, z_extra)) # be careful here because arrays are mutable...
+        #phi0 = np.vstack((phi0, phi_extra))
+        # this approach should maintain contiguity
+        new_phi0 = np.zeros((new_z0.size, phi0.shape[1]))
+        new_phi0[:z0.size, :] = phi0.copy()
+        new_phi0[z0.size:, :] = phi_extra.copy()
+        z0 = new_z0
+        phi0 = new_phi0
+        rho0 = np.concatenate((rho0, rho_extra))
+    elif Z0 > Z1: # need to extend modes from z1
+        z_extra = z0[z0 > Z1]
+        rho_extra = rho_hs1 * np.ones(z_extra.size)
+        phi_extra = np.exp(-gammas1[None,:] * (z_extra[:,None] - Z1))* phi1[-1,:]
+        z1 = np.concatenate((z1, z_extra))
+        #phi1 = np.vstack((phi1, phi_extra))
+        new_phi1 = np.zeros((z1.size, phi1.shape[1]))
+        new_phi1[:phi1.shape[0], :] = phi1.copy()
+        new_phi1[phi1.shape[1]:, :] = phi_extra.copy()
+        phi1 = new_phi1
+
+        rho1 = np.concatenate((rho1, rho_extra))
+
+    # now both grids extend to same depths
+    rho0_new = interp.vec_lin_int(z1, z0, rho0)
+    phi0_new = np.zeros((z1.size, phi0.shape[1]))
+    for i in range(phi0.shape[1]):
+        phi0_new[:,i] = interp.vec_lin_int(z1, z0, phi0[:,i])
+
+
+    #plt.plot(phi0_new[::1, 0], z1[::1], label='phi0 after')
+    #plt.plot(phi1[::1, 0], z1[::1], label='phi1 after')
+    #plt.plot(phi0_new[::1, -1], z1[::1], label='phi0 after')
+    #plt.plot(phi1[::1, -1], z1[::1], label='phi1 _after')
+    #plt.legend()
+    #plt.gca().invert_yaxis()
     #plt.show()
-    
-    # restrict to relevant ranges...
-    rel_inds =  ri_pts < rs 
-    if rel_inds.sum() == 0: # receiver is in first range-independent segment
-        num_segs = 1
-    else:
-        ri_pts = ri_pts[rel_inds]
-        num_segs = ri_pts.size + 1
-    
-    # first compute pressure in the first segment
+
+    return z1, rho0_new, phi0_new, rho1, phi1
+
+#@jit
+def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z1, rho1, rho_hs1, r0, r1, same_grid):
+    """
+    Given vector of amplitudes a0
+    modal information in the left segment
+    krs0 - np 1d array complex
+    gammas0 - np 1d array (sqrt(krm^2 - k_hs^2).real)
+    phi0 - np 2d array (Nz x M)
+    z0 - np 1d array
+    rho0 - np 1d array
+    rho_hs0 - float
+    modal information in the right segment
+    same format
+
+    r0 - float
+        range at which the left segment began
+    r1 - float
+        range at which the new segment begines (and therefore the interface between left and right segments)
+    same_grid - Boolean
+        flag to indicate whether or not the grid is equal for all ranges
+    """
+    Z1 = np.max(z1) # get these before updating them in get on same grid...
+    Z0 = np.max(z0)
+    if not same_grid: # need to interpolate
+        z1, rho0, phi0, rho1, phi1 = get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, gammas1)
+    Z1_new = np.max(z1)
+    a0_adv = advance_a(a0, krs0, r0, r1) # this is a_m^{(j)} * H_{1m}^{j}(r_{j+1})
+    p_left = np.sum(a0_adv * phi0, axis=1)
+    a0_adv_weighted = krs0 * a0_adv
+    p_weighted_left = np.sum(a0_adv_weighted * phi0, axis=1)
+
+    # these are the for the integral from Z to infinity
+    tail_values = a0_adv * phi0[-1,:]*np.exp(-gammas0 * (Z1_new - Z0))
+    tail_values_weighted = a0_adv_weighted * phi0[-1,:]*np.exp(-gammas0 * (Z1_new - Z0))
+
+    # now iterate over modes to compute the new mode amplitudes for the right segment 
+    M1 = krs1.size
+    anew = np.zeros((M1), dtype=np.complex128)
+    for l in range(M1):
+        phi1_l = phi1[:,l]
+        # first integrate down to Z1_new
+        term1 = np.trapz(p_left / rho1 * phi1_l, z1) # modes are normalized using trapezoid rule so this should be good
+        # now add the contribution to the integral from the tail
+        tail1 = 1 / rho_hs1 * phi1_l[-1] * np.exp(-gammas1[l] *(Z1_new - Z1)) * np.sum(tail_values   / (gammas1[l] + gammas0))
+        term1 += tail1
+
+        # now do the particle velocity matching integral
+        term2 = np.trapz(p_weighted_left / rho0 * phi1_l, z1)
+        tail2 = 1 / rho_hs0 * phi1_l[-1] * np.exp(-gammas1[l] *(Z1_new - Z1)) * np.sum(tail_values_weighted   / (gammas1[l] + gammas0))
+        term2 += tail2
+
+        term2 /= krs1[l]
+
+        al = 0.5*(term1 + term2)
+        anew[l] = al
+    return anew
+
+def compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rgrid, zs, zr, rs, same_grid):
+    """
+    Compute the pressure field at the receiver depths in zr
+    Due to the source at zs 
+    receiver is at range rs
+    rgrid is the grid at which the environmental segments are centered?
+    rgrid[0] must be 0
+    same_grid - boolean Flag 
+        True if all the modes have been evaluated on same grid (and so interpolation is not necessary)
+    """
+    Nr = zr.size
     krs0 = krs_list[0]
     phi0 = phi_list[0]
-    M = krs0.size
-    z0 = zgrid_list[0]
-    #rho_hs0 = rho_hs_list[0]
+    zgrid0 = zgrid_list[0]
+    rho0 = rho_list[0]
+    rho_hs0 = rho_hs_list[0]
     c_hs0 = c_hs_list[0]
-    phi_zs = np.zeros((1, M))
-    for i in range(M):
-        phi_zs[:,i] = np.interp(zs, z0, phi0[:,i])
+    gammas0 = np.sqrt(krs0**2 - (omega**2 / c_hs0**2)).real
+   
+    phi_zs = np.zeros((krs0.size))
+    for i in range(krs0.size):
+        phi_zs[i] = interp.lin_int(zs, zgrid0, phi0[:,i])
+    # the initial value is a bit 
+    a0 = phi_zs * np.exp(-1j * krs0 * rgrid[1]) / np.sqrt(krs0.real) 
+    a0 *= 1j*np.exp(1j*np.pi/4) # assumes rho is 1 at source depth
+    a0 /= np.sqrt(8*np.pi)
 
-    krs0, phi0, z0 = krs_list[0].copy(), phi_list[0].copy(), zgrid_list[0].copy()
-    rho0, rho_hs0, c_hs0 = rho_list[0].copy(), rho_hs_list[0], c_hs_list[0]
-    if num_segs == 1:
-        P = get_pressure(phi0, phi_zs, krs0, rs)
-        P = np.interp(zr, z0, P[:,0])
-    else:
-        #  now loop over the range-independent segments, tracking the weights...
-        for i in range(num_segs-1):
-            # get modes, density, and grid for the new range-ind segment
-            krs1, phi1, z1 = krs_list[i+1].copy(), phi_list[i+1].copy(), zgrid_list[i+1].copy()
-            rho1, rho_hs1, c_hs1 = rho_list[i+1].copy(), rho_hs_list[i+1], c_hs_list[i+1]
 
-            # compute pressure at  interface using last range-ind. seg., interpolating
-            # it onto the current grid (z1)
-            gamma0 = np.sqrt(np.square(krs0.real) - omega*omega / c_hs0 / c_hs0)
-            gamma1 = np.sqrt(np.square(krs1.real) - omega*omega / c_hs1 / c_hs1)
-            phi0_bott = phi0[-1,:]
-            phi1_bott = phi1[-1,:]
-            z_bott0 = z0[-1] # store bottom pt...
-            z_bott1 = z1[-1] # store bottom pt...
+    for i in range(1, rgrid.size):
+        r0 = rgrid[i-1]
+        r1 = rgrid[i]
 
-            # if new segment is deeper, use evanescent tail to get old seg at all points on new grid
-            if z_bott1 > z_bott0: 
-                z_extra = z1[z1 > z_bott0] # extra_zpts
-                exp_decay = np.exp(-np.outer((z_extra - z_bott0), gamma0))
-                phi0_extra = phi0[-1,:] * exp_decay
-                phi0 = np.vstack((phi0, phi0_extra))
-                #print('New seg deeper. Num new points is {0}. Extra mode values has shape {1}. New mode matrix has shape {2}'.format(z_extra.size, phi0_extra.shape, phi0.shape))
-                z0 = np.hstack((z0, z_extra))
-            elif z_bott0 > z_bott1: # old segment was deeper, so use evanescent tail to extend it to deepest point in old grid. This is necessary for the integral.
-                z_extra = z0[z0 > z_bott1] # extra_zpts
-                exp_decay = np.exp(-np.outer((z_extra - z_bott1), gamma1))
-                phi1_extra = phi1[-1,:] * exp_decay
-                phi1 = np.vstack((phi1, phi1_extra))
-                #print('Old seg deeper. Num new points is {0}. Extra mode values has shape {1}. New mode matrix has shape {2}'.format(z_extra.size, phi1_extra.shape, phi1.shape))
-                z1 = np.hstack((z1, z_extra))
-                rho1 = np.hstack((rho1, rho_hs1*np.ones(z_extra.size))) # pad rho1 with halfpsace val
+        phi0 = phi_list[i-1]
+        zgrid0 = zgrid_list[i-1]
+        rho0 = rho_list[i-1]
+        rho_hs0 = rho_hs_list[i-1]
+        c_hs0 = c_hs_list[i-1]
+        krs0 = krs_list[i-1]
+        gammas0 = np.sqrt(krs0**2 - (omega**2 / c_hs0**2)).real
 
-            zr_max = zr.max() # if receiver depth is deeper than grid (in halfspace), theb extend grid
-            if zr_max > z1[-1]: # need to extend grid to deepest reeiver point
-                f = omega/2/np.pi
-                lam = 1500 / f
-                dz = lam / 20
-                Z = (zr_max - z1[-1])
-                N = max(10, int(Z/dz))
-                z_extra = np.linspace(z1[-1], zr_max, N)
-                #plt.figure()
-                #plt.plot(z1, phi0[:,0])
-                phi0_extra = phi0[-1,:]*np.exp(-np.outer(z_extra - z1[-1], gamma0))
-                phi1_extra = phi1[-1,:]*np.exp(-np.outer(z_extra - z1[-1], gamma1))
-                phi0 = np.vstack((phi0, phi0_extra))
-                phi1 = np.vstack((phi1, phi1_extra))
-                z0 = np.hstack((z0, z_extra))
-                z1 = np.hstack((z1, z_extra))
-                rho1 = np.hstack((rho1, rho_hs1*np.ones(z_extra.size))) # pad rho1 with halfpsace val
-                #plt.plot(z1, phi0[:,0])
-                #plt.gca().invert_yaxis()
-                #plt.show()
-                
-
-            if i == 0:# first range...     
-                A0 = np.exp(1j*np.pi/4)*phi_zs[0,:] /np.sqrt(8*np.pi) /np.sqrt(krs0)
-                A0 *= np.exp(-1j*ri_pts[0]*krs0)
-                matrix = A0  * phi0
-                P = np.sum(matrix,axis=1)
+        if rs <= r1: # source is in this segment
+            if i == 1:
+                a0 = advance_a(a0, krs0, r1, rs)
             else:
-                A0 *= np.exp(-1j*(ri_pts[i] - ri_pts[i-1])*krs0)
-                matrix = A0*phi0
-                P = np.sum(matrix, axis=1)
+                a0 = advance_a(a0, krs0, r0, rs)
+            p = np.sum(a0 * phi0, axis=1)
+            p /= np.sqrt(rs)
+            p_zr_real = interp.vec_lin_int(zr, zgrid0, p.real)
+            p_zr_imag = interp.vec_lin_int(zr, zgrid0, p.imag)
+            return p_zr_real + 1j*p_zr_imag
+        else: # advance a0 to the next segment
 
+            phi1 = phi_list[i]
+            zgrid1 = zgrid_list[i]
+            rho1 = rho_list[i]
+            rho_hs1 = rho_hs_list[i]
+            c_hs1 = c_hs_list[i]
+            krs1 = krs_list[i]
+            gammas1 = np.sqrt(krs1**2 - (omega**2 / c_hs1**2)).real
+            if i == 1: # first segment is different than all the rest
+                a0 = update_a0(a0, krs0, gammas0, phi0, zgrid0, rho0, rho_hs0, krs1, gammas1, phi1, zgrid1, rho1, rho_hs1, r1, r1, same_grid)
+            else:
+                a0 = update_a0(a0, krs0, gammas0, phi0, zgrid0, rho0, rho_hs0, krs1, gammas1, phi1, zgrid1, rho1, rho_hs1, r0, r1, same_grid)
+    # rs > rgrid[-1] so the source is beyond the last segment
+    a0 = advance_a(a0, krs1, r1, rs) 
+    p = np.sum(a0 * phi1, axis=1)
+    p /= np.sqrt(rs)
+    p_zr_real = interp.vec_lin_int(zr, zgrid1, p.real) # zgrid should be very fine so I don't see any issue here...
+    p_zr_imag = interp.vec_lin_int(zr, zgrid1, p.imag)
+    return p_zr_real + 1j*p_zr_imag
 
-            P = np.interp(z1, z0, P)[:, np.newaxis]
-            #plt.figure()
-            #plt.plot(P[:,0].real, z1)
-            #plt.plot(P[:,0].imag, z1)
-            #plt.show()
-
-            # compute mode_weights A by first integrating down to halfspace
-            h_pts = z1[1:] - z1[:-1] # get interval widths for integration
-            rho_pts = .5*(rho1[1:] +rho1[:-1]) # use average density for intervals
-
-            integrand = P*phi1
-            integrand = .5*(integrand[1:] + integrand[:-1]) * (h_pts / rho_pts)[:, np.newaxis]
-
-
-            #for l in range(phi1.shape[1]):
-            #    integrand1 = phi1[:,0]*phi1[:,l]
-            #    integrand1 = .5*(integrand1[1:] + integrand1[:-1]) * (h_pts / rho_pts)
-            #    tail1 = (phi1[-1,0] * phi1[-1,l]) /2/rho_hs1 / (gamma1[0] + gamma1[l])
-            #    print(np.sum(integrand1))
-            #sys.exit(0)
-            #plt.figure()
-            #plt.plot(integrand[:,0].real, .5*(z1[1:] + z1[:-1]))
-            #plt.plot(integrand[:,0].imag, .5*(z1[1:] + z1[:-1]))
-            #plt.show()
-            
-            # then add contribution to the integral of the tail 
-            tail = np.zeros(krs1.size,dtype=np.complex_)
-            for mode_num in range(krs1.size):
-                if i == 0:
-                    tail_matrix = A0*phi0_bott*np.exp(-(z1[-1] - z_bott0))
-                    tail[mode_num] = phi1[-1,mode_num] * np.sum(tail_matrix / (gamma0 + gamma1[mode_num]) )
-                else:
-                    tail_matrix = A0*phi0_bott*np.exp(-(z1[-1] - z_bott0))
-                    tail[mode_num] = phi1[-1,mode_num] * np.sum(tail_matrix/ (gamma0 + gamma1[mode_num]) )
-            tail /= rho_hs1
-            A = np.sum(integrand, axis=0)
-            A += tail
-
-            A0 = A # save weights to compute tail and pressure field in next segment
-
-            # save current modes and whatnot for next segment
-            krs0, phi0, z0 = krs1.copy(), phi1.copy(), z1.copy()
-            rho0, rho_hs0, c_hs0 = rho1.copy(), rho_hs1, c_hs1
-            
-            # restore original grid
-            if i < num_segs-1:
-                z_inds = z0 <= z_bott1
-                phi0 = phi0[z_inds,:]
-                z0 = z0[z_inds]
-                rho0 = rho0[z_inds]
-
-        # compute final field and interpolate onto receiver depths
-        zr_max = zr.max()
-        z0_bott = z0.max()
-        if zr_max > z0.max(): # use tail to compute phi0 down to bottom of zr_max
-            z_extra = zr[zr > z0.max()]
-            gamma0 = np.sqrt(np.square(krs0.real) - omega*omega / c_hs0 / c_hs0)
-            exp_decay = np.exp(-np.outer((z_extra - z0_bott), gamma0))
-            phi0_extra = phi0[-1,:] * exp_decay
-            phi0 = np.vstack((phi0, phi0_extra))
-            z0 = np.hstack((z0, z_extra))
-        #plt.figure()
-        #plt.plot(phi0[:,0],z0)
-        #plt.plot(phi0[:,-1],z0)
-        #plt.show()
-
-        matrix = A0*np.exp(-1j*(rs - ri_pts[-1])) / np.sqrt(rs)* phi0
-        P = np.sum(matrix, axis=1)
-        P = np.interp(zr, z0, P)
-    return P
+def get_seg_interface_grid(rgrid):
+    """
+    rgrid is the ranges at which the 
+    environments are centered
+    interfaces are halfway between them...
+    """
+    r_out = np.zeros((rgrid.size))
+    r_out[1:] = 0.5*(rgrid[1:] + rgrid[:-1])
+    return r_out
 
 def downslope_coupled_mode_code():
     """
@@ -299,10 +286,9 @@ def downslope_coupled_mode_code():
     # 100 meters deep at source
     # 200 meters deep at receiver
     """
-    from envs import factory
-    builder=factory.create('hs')
+    from pykrak.linearized_model import LinearizedEnv
     
-    freq = 200
+    freq = 40.0
     omega = 2*np.pi*freq
     
     rgrid = np.linspace(0, 10e3, 100)
@@ -310,20 +296,88 @@ def downslope_coupled_mode_code():
 
     c_hs = 1800. 
     rho_hs = 1.8
-    attn_hs = 1.
+    attn_hs = .2
     krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list = [], [], [], [], [], []
+    dz = (1500 / freq / 20) # lambda / 20
     for Z in Zvals:
-        zw  = np.array([0., Z])
-        cw  = np.array([1500., 1500.])
-        dz = 1.0
-        env = builder(zw, cw, c_hs, rho_hs, attn_hs, 'dbpkmhz', pert=False)
-        env.add_freq(freq)
-        krs = env.get_krs(**{'cmax':1799., 'Nh':1})
-        phi = env.get_phi()
-        zgrid = env.get_phi_z()
-        rhogrid = env.get_rho_grid()
-    
+        z_list = [np.array([0, Z]), np.array([Z, max(Zvals) + 20.0])]
+        c_list = [np.array([1500., 1470.]), np.array([1800.0, 1800.0])]
+        env_rho_list = [np.array([1.0, 1.0]), np.array([rho_hs, rho_hs])]
+        attn_list = [np.array([.0, .0]), np.array([attn_hs, attn_hs])]
+        cmin= min([c_list[i].min() for i in range(len(c_list))])
+        cmax = 1799.0
 
+        N_list = [max(int(np.ceil((z_list[i][1] - z_list[i][0]) / dz)), 4)  for i in range(len(z_list))]
+
+        env = LinearizedEnv(freq, z_list, c_list, env_rho_list, attn_list, c_hs, rho_hs, attn_hs, 'dbpkmhz', N_list, cmin, cmax)
+        krs = env.get_krs()
+        phi = env.get_phi(N_list)
+        zgrid = env.get_phi_z(N_list)
+        rhogrid = env.get_rho_grid(N_list)
+    
+        krs_list.append(krs)
+        phi_list.append(phi)
+        rho_list.append(rhogrid)
+        zgrid_list.append(zgrid)
+        c_hs_list.append(c_hs)
+        rho_hs_list.append(rho_hs)
+        
+    zs = 25.    
+
+    same_grid = False
+
+    zr = np.linspace(5., Zvals.max(), 200)
+    p_arr = np.zeros((zr.size, rgrid.size-10), dtype=np.complex128)
+    rcm_grid = get_seg_interface_grid(rgrid)
+    for i in range(10,rgrid.size):
+        rs = rgrid[i]
+        p = compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rcm_grid, zs, zr, rs, same_grid)
+        p_arr[:,i-10] = p
+   
+    tl = 20*np.log10(abs(p_arr))
+
+
+    plt.figure()
+    plt.pcolormesh(rgrid[10:], zr, tl, vmax=np.max(tl), vmin=np.max(tl)-60)
+    plt.colorbar()
+    plt.gca().invert_yaxis()
+
+def upslope_coupled_mode_code():
+    """
+    # 10 km source range
+    # sloping bottom
+    # 100 meters deep at source
+    # 200 meters deep at receiver
+    """
+    from pykrak.linearized_model import LinearizedEnv
+    
+    freq = 40.0
+    omega = 2*np.pi*freq
+    
+    rgrid = np.linspace(0, 10e3, 100)
+    Zvals = 200 - (rgrid * 100 / 10e3)
+
+    c_hs = 1800. 
+    rho_hs = 1.8
+    attn_hs = .2
+    krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list = [], [], [], [], [], []
+    dz = (1500 / freq / 20) # lambda / 20
+    for Z in Zvals:
+        z_list = [np.array([0, Z]), np.array([Z, max(Zvals) + 20.0])]
+        c_list = [np.array([1500., 1470.]), np.array([1800.0, 1800.0])]
+        env_rho_list = [np.array([1.0, 1.0]), np.array([rho_hs, rho_hs])]
+        attn_list = [np.array([.0, .0]), np.array([attn_hs, attn_hs])]
+        cmin= min([c_list[i].min() for i in range(len(c_list))])
+        cmax = 1799.0
+
+        N_list = [max(int(np.ceil((z_list[i][1] - z_list[i][0]) / dz)), 4)  for i in range(len(z_list))]
+
+        env = LinearizedEnv(freq, z_list, c_list, env_rho_list, attn_list, c_hs, rho_hs, attn_hs, 'dbpkmhz', N_list, cmin, cmax)
+        krs = env.get_krs()
+        phi = env.get_phi(N_list)
+        zgrid = env.get_phi_z(N_list)
+        rhogrid = env.get_rho_grid(N_list)
+    
         krs_list.append(krs)
         phi_list.append(phi)
         rho_list.append(rhogrid)
@@ -335,105 +389,121 @@ def downslope_coupled_mode_code():
 
     zr = np.linspace(5., Zvals.max(), 200)
     p_arr = np.zeros((zr.size, rgrid.size-10), dtype=np.complex128)
+    rcm_grid = get_seg_interface_grid(rgrid)
     for i in range(10,rgrid.size):
         rs = rgrid[i]
-        p = compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rgrid, zs, zr, rs)
+        p = compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rcm_grid, zs, zr, rs,False)
         p_arr[:,i-10] = p
-    
+   
     tl = 20*np.log10(abs(p_arr))
 
+
     plt.figure()
-    plt.pcolormesh(rgrid[10:], zr, tl, vmax=-60, vmin=-90)
+    plt.pcolormesh(rgrid[10:], zr, tl, vmax=np.max(tl), vmin=np.max(tl)-60)
     plt.colorbar()
     plt.gca().invert_yaxis()
-    plt.show()
 
-def ri_check():
-    from envs import factory
-    builder=factory.create('hs')
+def range_independent_check():
+    """
+    # 100 km source range
+    """
+    from pykrak.linearized_model import LinearizedEnv
     
-    freq = 100
+    freq = 35.0
     omega = 2*np.pi*freq
     
-    Z = 200.
-    """ Coupled mode check """
-    rgrid = np.linspace(0, 10e3, 1000)
-    Zvals = 200 + np.zeros((rgrid.size))
+    rgrid = np.linspace(0, 10e4, 100)
+    Z = 200.0
 
     c_hs = 1800. 
     rho_hs = 1.8
-    attn_hs = 1.
-    #krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list = [], [], [], [], [], []
-    zw  = np.array([0., Z])
-    cw  = np.array([1500., 1500.])
-    dz = .1
-    env = builder(zw, cw, c_hs, rho_hs, attn_hs, 'dbpkmhz', dz=dz, pert=False)
-    env.add_freq(freq)
-    krs = env.get_krs(**{'cmax':1799., 'Nh':1})
-    phi = env.get_phi()
-    zgrid = env.get_phi_z()
-    rhogrid = env.get_rho_grid()
-    
+    attn_hs = .2
+    attn_units = 'dbpkmhz'
 
-    krs_list = [krs] * rgrid.size
-    phi_list = [phi] * rgrid.size
-    rho_list = [rhogrid] * rgrid.size
-    zgrid_list = [zgrid] * rgrid.size
-    c_hs_list = [c_hs] * rgrid.size
-    rho_hs_list = [rho_hs]*rgrid.size
-        
+    krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list = [], [], [], [], [], []
+    dz = (1500 / freq / 80) # lambda / 20
+    z_list = [np.array([0, Z]), np.array([Z, Z + 20.0])]
+    c_list = [np.array([1500., 1470.]), np.array([1800.0, 1800.0])]
+    env_rho_list = [np.array([1.0, 1.0]), np.array([rho_hs, rho_hs])]
+    attn_list = [np.array([.0, .0]), np.array([attn_hs, attn_hs])]
+    cmin= min([c_list[i].min() for i in range(len(c_list))])
+    cmax = 1799.0
+
+    N_list = [max(int(np.ceil((z_list[i][1] - z_list[i][0]) / dz)), 4)  for i in range(len(z_list))]
+
+    env = LinearizedEnv(freq, z_list, c_list, env_rho_list, attn_list, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
+    krs = env.get_krs()
+    phi = env.get_phi(N_list)
+    zgrid = env.get_phi_z(N_list)
+    rhogrid = env.get_rho_grid(N_list)
+
     zs = 25.    
+    zr = np.linspace(5., Z, 200)
 
-    zr = np.linspace(5., 195., 200)
-    p_arr = np.zeros((zr.size, rgrid.size-10), dtype=np.complex128)
-    p_ri_arr = np.zeros((zr.size, rgrid.size-10), dtype=np.complex128)
-    phi_zr = np.zeros((zr.size, krs.size))
-    phi_zs = np.zeros((1, krs.size))
-    for i in range(krs.size):
-        phi_zr[:,i] = np.interp(zr, zgrid, phi[:,i])
-        phi_zs[0,i] = np.interp(zs, zgrid, phi[:,i])
-   
-    corr_grid = np.zeros((rgrid.size-10)) 
-    for i in range(10,rgrid.size):
-        rs = rgrid[i]
-        p = compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rgrid, zs, zr, rs)
-        p_ri = get_pressure(phi_zr, phi_zs, krs, rs)[:,0]
-        p_ri_arr[:,i-10] = p_ri
-        p_arr[:,i-10] = p
-        corr = np.square(abs(np.sum(p_ri.conj()*p))) / np.square(np.linalg.norm(p_ri)) / np.square(np.linalg.norm(p))
-        #if corr < .3:
-        #    plt.plot(p_ri.real, 'b--')
-        #    plt.plot(p.real, 'b')
-        #    plt.plot(p_ri.imag, 'r--')
-        #    plt.plot(p.imag, 'r')
-        #plt.show()
-        corr_grid[i-10] = corr
-    
-    tl = 20*np.log10(abs(p_arr))
-    tl_ri = 20*np.log10(abs(p_ri_arr))
+    """ Calculate usinga  range-independent model """
+    from pykrak.pressure_calc import get_arr_pressure
+    phi_zs = env.get_phi_zr(np.array([zs]))
+    phi_zr = env.get_phi_zr(zr)
+    p2 = get_arr_pressure(phi_zs, phi_zr, krs, rgrid[1:])
+    p2 = np.squeeze(p2)
+    tl2 = 20*np.log10(abs(p2))
 
     plt.figure()
-    plt.plot(corr_grid)
-    plt.show()
-
-
-    fig, axes =plt.subplots(2,1, sharex=True)
-    cs0 = axes[0].pcolormesh(rgrid[10:], zr, tl, vmax=-60, vmin=-90)
-    fig.colorbar(cs0, ax=axes[0])
-    plt.gca().invert_yaxis()
-    cs1 = axes[1].pcolormesh(rgrid[10:], zr, tl_ri, vmax=-60, vmin=-90)
-    fig.colorbar(cs1, ax=axes[1])
+    plt.pcolormesh(rgrid[1:], zr, tl2)
+    #plt.plot(rgrid[10:], tl2[np.argmin(np.abs(env.phi_z - zs))])
+    #plt.plot(rgrid[10:], -10*np.log10(rgrid[10:]))
+    plt.colorbar()
     plt.gca().invert_yaxis()
 
-    fig, axes =plt.subplots(2,1, sharex=True)
-    cs0 = axes[0].pcolormesh(rgrid[10:], zr, p_arr.real)
-    fig.colorbar(cs0, ax=axes[0])
+    c_hs_imag = get_c_imag(c_hs, attn_hs, attn_units, 2*np.pi*freq)
+    c_hs_complex = c_hs + 1j*c_hs_imag
+
+    for i in range(rgrid.size):
+        krs_list.append(krs)
+        phi_list.append(phi)
+        rho_list.append(rhogrid)
+        zgrid_list.append(zgrid)
+        c_hs_list.append(c_hs_complex)
+        rho_hs_list.append(rho_hs)
+        
+    p_arr = np.zeros((zr.size, rgrid.size-1), dtype=np.complex128)
+    rcm_grid = get_seg_interface_grid(rgrid)
+    for i in range(1,rgrid.size):
+        rs = rgrid[i]
+        p = compute_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rcm_grid, zs, zr, rs, True)
+        p_arr[:,i-1] = p
+   
+    tl = 20*np.log10(abs(p_arr))
+
+
+
+    print('krs', krs)
+
+
+    plt.figure()
+    plt.pcolormesh(rgrid[1:], zr, tl)
+    plt.colorbar()
     plt.gca().invert_yaxis()
-    cs1 = axes[1].pcolormesh(rgrid[10:], zr, p_ri_arr.real)
-    fig.colorbar(cs1, ax=axes[1])
-    plt.gca().invert_yaxis()
-    plt.show()
+
+    plt.figure()
+
+    plt.plot(rgrid[1:], tl[np.argmin(np.abs(env.phi_z - zs))])
+    plt.plot(rgrid[1:], tl2[np.argmin(np.abs(env.phi_z - zs))])
+    plt.plot(rgrid[1:], -10*np.log10(rgrid[1:]))
+    plt.plot(rgrid[1:], -20*np.log10(rgrid[1:]))
+
+
+    fig, axes = plt.subplots(2,1, sharex=True)
+    z_ind = np.argmin(np.abs(env.phi_z - zs))
+    axes[0].plot(rgrid[1:], np.abs(p_arr[z_ind, :]),'k')
+    axes[0].plot(rgrid[1:], np.abs(p2[z_ind, :]), 'b')
+    axes[1].plot(rgrid[1:], np.angle(p_arr[z_ind, :]), 'k')
+    axes[1].plot(rgrid[1:], np.angle(p2[z_ind, :]), 'b')
+
 
 if __name__ == '__main__':
-    ri_check()
+    upslope_coupled_mode_code()
+    plt.show()
+    range_independent_check()
     downslope_coupled_mode_code()
+    plt.show()
