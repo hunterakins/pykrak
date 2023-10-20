@@ -1,5 +1,5 @@
 Python implementation of normal mode solver for underwater acoustic propagation.
-This is more or less a translation of Michael Porter's KRAKEN.
+This is more or less a translation of Michael Porter's KRAKEN (not KRAKENC).
 I also provide an internal wave mode equation solver using the same numerical methods, as Richard Evans FORTRAN model WAVE.
 The model implementation uses numba to compile the routines so that it has similar speeds as KRAKEN.
 
