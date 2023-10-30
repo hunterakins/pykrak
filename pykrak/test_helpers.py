@@ -34,14 +34,22 @@ def read_krs_from_prt_file(prt_file):
             i += 1
         i += 1 # now i is the first mode one
         krs = []
+        mode_nums = [] # krak will only print subset
         while True:
             line = lines[i]
             line = line.strip(' ')
             if line[0] == '_':
-                return krs      
+                return krs, mode_nums      
             split_line = line.split(' ')
-            krs.append(float(split_line[2]))
+            print(split_line)
+            split_line = [x for x in split_line if x != '']
+            if float(split_line[2]) == 0.0:
+                krs.append(float(split_line[1]))
+            else:
+                krs.append(float(split_line[1])+1j*float(split_line[2])) 
+            mode_nums.append(int(split_line[0]))
             i += 1
+    return krs, mode_nums
             
 def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
     """
@@ -78,6 +86,7 @@ def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
     print('attn units', attn_units)
     env= Env(z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs, attn_units)
     env.add_freq(freq)
+    N_list = [x+1 for x in N_list] # kraken doesn't count end points?
     return env, N_list
 
 def get_krak_inputs(env, twod=False):
