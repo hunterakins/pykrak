@@ -13,7 +13,7 @@ from matplotlib import pyplot as plt
 from matplotlib import rc
 import matplotlib
 from pyat.pyat.readwrite import read_env, read_modes
-from pyat.pyat.env import SSP, plot_ssp
+from pyat.pyat import env as pyat_env
 from pykrak.pykrak_env import Env
 import os
 
@@ -79,3 +79,39 @@ def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
     env= Env(z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs, attn_units)
     env.add_freq(freq)
     return env, N_list
+
+def get_krak_inputs(env, twod=False):
+    """
+    Get ssp object and bdy object for acoustics toolbox
+    from pykrak object
+    twod flag is for bottom halfspace 
+    """
+    layer_list = []
+    N_list = []
+    for i in range(len(env.z_list)): # for each layer
+        z = env.z_list[i]
+        c = env.c_list[i]
+        rho = env.rho_list[i]
+        attn = env.attn_list[i]
+
+        ssp = pyat_env.SSPraw(z, c, np.zeros(z.size), rho, attn, np.zeros(z.size))
+        layer_list.append(ssp)
+        N_list.append(z.size)
+    depths = [0] + [x[-1] for x in env.z_list] # layer depths
+    Nmedia = len(layer_list)
+    ssp = pyat_env.SSP(layer_list, depths, Nmedia, N=N_list)
+
+    atten_opts = ['N', 'F', 'M', 'W', 'Q']
+    py_opts = ['npm', 'dbpkmhz', 'dbpm', 'dbplam', 'q']
+    attn_units = atten_opts[py_opts.index(env.attn_units)]
+    print('attn units', attn_units)
+
+    topbdry = pyat_env.TopBndry('CV' + attn_units)
+    hs = pyat_env.HS(env.c_hs, 0, env.rho_hs, env.attn_hs, 0)
+    bott_opt = 'A'
+    if twod:
+        bott_opt += '~'
+    botbdry = pyat_env.BotBndry(bott_opt, hs)
+    bndry = pyat_env.Bndry(topbdry, botbdry)
+    return ssp, bndry
+
