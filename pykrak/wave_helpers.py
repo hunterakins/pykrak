@@ -13,10 +13,7 @@ Institution: Scripps Institution of Oceanography, UC San Diego
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import rc
-rc('text', usetex=True)
 import matplotlib
-matplotlib.rcParams['mathtext.fontset'] = 'stix'
-matplotlib.rcParams['font.family'] = 'STIXGeneral'
 import gsw
 
 
