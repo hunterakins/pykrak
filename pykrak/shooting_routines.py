@@ -24,12 +24,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib import rc
-rc('text', usetex=True)
-import matplotlib
-matplotlib.rcParams['mathtext.fontset'] = 'stix'
-matplotlib.rcParams['font.family'] = 'STIXGeneral'
 from numba import njit
 
 @njit

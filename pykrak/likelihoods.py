@@ -10,12 +10,6 @@ Institution: Scripps Institution of Oceanography, UC San Diego
 """
 
 import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib import rc
-rc('text', usetex=True)
-import matplotlib
-matplotlib.rcParams['mathtext.fontset'] = 'stix'
-matplotlib.rcParams['font.family'] = 'STIXGeneral'
 from pykrak.raw_pykrak import get_modes
 from pykrak.pressure_calc import get_pressure, get_delta_R, get_phi_zr
 from pykrak.adjoint import get_phi_zr, get_zfg_eta_ai, get_rfg, get_dpda, get_dpdaidaj, get_zfg_eta_aiaj
@@ -276,7 +270,6 @@ def get_ml_noise_lh_gridded(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn
         return log_lh_grid
     return lh
         
-
 def get_ml_noise_lh_gridded_with_gradient(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax, model_matrix):
     """
     Use columns of model matrix to get new sound speeds

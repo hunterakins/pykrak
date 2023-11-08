@@ -254,6 +254,8 @@ def get_comp_gammas(k_rad, h, b_arr_sq, J):
     count = 0
     while j < J and (count < max_num_iter):
         det, N = get_sturm_seq_count(k_rad, h, b_arr_sq, curr_lam)
+        if np.isnan(det):
+            raise ValueError("det is nan")
         if det*detl < 1: # found a new one
             root = find_root(k_rad, h, b_arr_sq, lam_l, curr_lam)
             gammas[j] = np.sqrt(root)
