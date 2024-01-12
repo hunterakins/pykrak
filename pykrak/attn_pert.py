@@ -29,6 +29,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+@njit
+def get_c_imag_npm(c_real, attn_npm, omega):
+    c_imag = attn_npm * c_real**2 / omega
+    return c_imag
 
 def get_c_imag(c_real, attn, attn_units, omega):
     if attn_units == 'dbplam' or attn_units == 'q':

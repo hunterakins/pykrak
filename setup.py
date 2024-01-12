@@ -6,7 +6,7 @@ here = pathlib.Path(__file__).parent.resolve()
 
 setup(
     name="pykrak",
-    version="2.0.1",
+    version="2.0.3",
     description="Normal mode wave equation solver for stratified fluids",
     url="https://github.com/hunterakins/pykrak",
     author="F. Hunter Akins",

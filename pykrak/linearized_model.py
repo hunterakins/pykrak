@@ -18,8 +18,31 @@ from pykrak.sturm_seq import cat_list_to_arr
 from pykrak.raw_pykrak import get_modes
 from numba import njit
 from pykrak import pressure_calc as pc
-from pykrak.attn_pert import get_c_imag
+from pykrak.attn_pert import get_c_imag, get_attn_conv_factor, get_c_imag_npm
+from interp import interp
 
+class LinEnvError(Exception):
+    pass
+
+def get_ml_noise_lh(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax, model_matrix):
+    """
+    Use columns of model matrix to get new sound speeds
+    d is data vector
+    """
+    @njit
+    def lh(r, zs, zr, tilt, x):
+        """
+        """
+        delta_c = model_matrix@x
+        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        phi_zr = get_phi_zr(zr, phi_z, phi)
+        phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
+        deltaR = get_delta_R(tilt, zr)
+        p =get_pressure(phi_zr, phi_zs, krs, r,deltaR)
+        alpha_sq = get_alpha_sq(d[:,0], p[:,0])
+        log_lh = -.5*np.log(1- alpha_sq)
+        return log_lh
+    return lh
 
 class LinearizedEnv(Env):
     def __init__(self, freq, z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs,attn_units, N_list, cmin, cmax):
@@ -35,6 +58,7 @@ class LinearizedEnv(Env):
         self.phi_zs = None
         self.phi_zr = None
         self.x0 = None
+        self.add_attn_conv_factor()
 
     def _fix_mesh(self, N_list):
         """
@@ -72,10 +96,11 @@ class LinearizedEnv(Env):
             each column is a perturbation basis vector
         Interpolate these onto the mesh using linear interpolation
         """
-        num_vecs = pert_c_arr.shape[1]
-        self.P = num_vecs
-        interp_pert_c_arr = np.zeros((self.z_arr.size, num_vecs))
-        for i in range(num_vecs):
+        L = pert_c_arr.shape[1]
+        
+        self.P = L
+        interp_pert_c_arr = np.zeros((self.z_arr.size, L))
+        for i in range(L):
             interp_pert_c_arr[:, i] = np.interp(self.z_arr, pert_z_arr, pert_c_arr[:, i])
         self.pert_c_arr = interp_pert_c_arr
         return
@@ -101,21 +126,23 @@ class LinearizedEnv(Env):
     def full_forward_modes(self):
         """
         Run the model on the environment with the parameters perturbed by vector x0
-        Should run add_freq before running this
         """
         x0 = self.x0
         freq = self.freq
         ind_arr, z_arr, c_arr, rho_arr = self.ind_arr, self.z_arr, self.c_arr, self.rho_arr
         attn_arr = self.attn_arr
+        attn_arr_npm = self.conv_factor * attn_arr
         tmp_c_arr = c_arr + self.pert_c_arr @ x0
         omega = 2*np.pi*self.freq
-        tmp_c_imag = get_c_imag(tmp_c_arr, attn_arr, self.attn_units, omega)
+        #tmp_c_imag = get_c_imag(tmp_c_arr, attn_arr, self.attn_units, omega)
+        tmp_c_imag = get_c_imag_npm(tmp_c_arr, attn_arr_npm, omega)
         tmp_c_arr = tmp_c_arr + 1j * tmp_c_imag
         k_sq_arr = omega**2 / tmp_c_arr**2
 
         attn_arr = self.attn_arr
         rho_hs, c_hs, attn_hs = self.rho_hs, self.c_hs, self.attn_hs
-        c_hs_imag = get_c_imag(c_hs, attn_hs, self.attn_units, omega)
+        attn_npm = attn*self.conv_factor
+        c_hs_imag = get_c_imag_npm(c_hs, attn_npm, omega)
         tmp_c_hs  = c_hs + 1j * c_hs_imag
         k_hs_sq = omega**2 / tmp_c_hs**2
 
@@ -131,12 +158,16 @@ class LinearizedEnv(Env):
     def add_zs_arr(self, zs_arr):
         self.zs_arr = zs_arr
         modes = self.modes
+        if modes is None:
+            raise LinEnvError("Need to run full_forward_modes before adding zs arr")
         self.phi_zs = modes.get_phi_zr(zs_arr)
         return
 
     def add_zr_arr(self, zr_arr):
         self.zr_arr = zr_arr
         modes = self.modes
+        if modes is None:
+            raise LinEnvError("Need to run full_forward_modes before adding zs arr")
         self.phi_zr = modes.get_phi_zr(zr_arr)
         return
 
@@ -150,6 +181,8 @@ class LinearizedEnv(Env):
         """
         zs_arr, zr_arr, r_arr = self.zs_arr, self.zr_arr, self.r_arr  
         modes = self.modes
+        if modes is None:
+            raise LinEnvError("Need to run full_forward_modes before getting pressure")
         krs = modes.krs
         phi_zs, phi_zr = self.phi_zs, self.phi_zr
         p_arr = pc.get_arr_pressure(phi_zs, phi_zr, krs, r_arr, deltaR) 
@@ -192,6 +225,64 @@ class LinearizedEnv(Env):
         x0 = self.x0
         p = p0 + dpda @ (x - x0)
         return p
+
+    def get_numbaized_forward_p(self):
+        #x0 = self.x0
+        freq = self.freq
+        ind_arr, z_arr, c_arr, rho_arr = self.ind_arr, self.z_arr, self.c_arr, self.rho_arr
+        attn_arr = self.attn_arr
+        attn_arr_npm = self.conv_factor * attn_arr
+        omega = 2*np.pi*self.freq
+        pert_c_arr = self.pert_c_arr
+        attn_units = self.attn_units
+        rho_hs, c_hs, attn_hs = self.rho_hs, self.c_hs, self.attn_hs
+
+        attn_hs_npm = attn_hs*self.conv_factor # this is attenuation in nepers/meter
+        c_hs_imag = get_c_imag_npm(c_hs, attn_hs_npm, omega)
+
+        tmp_c_hs  = c_hs + 1j * c_hs_imag
+        k_hs_sq = omega**2 / tmp_c_hs**2
+        cmin, cmax = self.cmin, self.cmax
+        h_arr = self.h_arr
+
+
+        @njit
+        def get_p(r_arr, zs_arr, zr_arr, tilt, x0):
+            tmp_c_arr = c_arr + (pert_c_arr @ x0)[:,0]
+            tmp_c_imag = get_c_imag_npm(tmp_c_arr, attn_arr_npm, omega)
+            tmp_c_arr = tmp_c_arr + 1j * tmp_c_imag
+            k_sq_arr = omega**2 / tmp_c_arr**2
+            krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
+            M = krs.size
+            phi_zs = np.zeros((zs_arr.size, M))
+            phi_zr = np.zeros((zr_arr.size, M))
+            deltaR = pc.get_delta_R(tilt, zr_arr)
+            for i in range(M):
+                phi_zs[:,i] = interp.vec_lin_int(zs_arr, phi_z, phi[:,i])
+                phi_zr[:,i] = interp.vec_lin_int(zr_arr, phi_z, phi[:,i])
+            p_arr = pc.get_arr_pressure(phi_zs, phi_zr, krs, r_arr, deltaR) 
+            return p_arr
+        return get_p
+
+def get_ml_noise_lh(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax, model_matrix):
+    """
+    Use columns of model matrix to get new sound speeds
+    d is data vector
+    """
+    @njit
+    def lh(r, zs, zr, tilt, x):
+        """
+        """
+        delta_c = model_matrix@x
+        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        phi_zr = get_phi_zr(zr, phi_z, phi)
+        phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
+        deltaR = get_delta_R(tilt, zr)
+        p =get_pressure(phi_zr, phi_zs, krs, r,deltaR)
+        alpha_sq = get_alpha_sq(d[:,0], p[:,0])
+        log_lh = -.5*np.log(1- alpha_sq)
+        return log_lh
+    return lh
 
 def test1():
     import time

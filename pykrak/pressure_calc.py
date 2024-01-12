@@ -69,8 +69,8 @@ def get_delta_R(tilt_angle, zr):
     (so it's sort of the fixed point)
     Positive angle in DEGREES 
     """
-    Z = np.max(zr) - zr
-    deltaR = Z*np.tan(tilt_angle * np.pi / 180.)
+    Z = np.max(zr) - zr # this gives depth above bottom element  (so Z<0)
+    deltaR = Z*np.tan(tilt_angle * np.pi / 180.) # tilt_angle > 0 \implies tan(tilt_angle) > 0 , so delta R < 0
     deltaR = deltaR.reshape(zr.size,1)
     return deltaR
 
@@ -130,13 +130,16 @@ def get_arr_pressure(phi_zs, phi_zr, krs, r_arr, deltaR=np.array([0.0])):
         either single number or a different number for each receiver depth
     Return pressure as column vector
     """
-    phi_zs = np.reshape(phi_zs, (phi_zs.shape[0], 1, phi_zs.shape[1]))
-    phi_zr = np.reshape(phi_zr, (1, phi_zr.shape[0], phi_zr.shape[1]))
+    Nzr = phi_zr.shape[0]
+    Nzs = phi_zs.shape[0]
+    M = phi_zr.shape[1]
+    phi_zs = np.reshape(phi_zs, (Nzs, 1, M))
+    phi_zr = np.reshape(phi_zr, (1, Nzr, M))
     modal_matrix = phi_zs *phi_zr
     if deltaR.size == 1: # constant offset
         r_arr = r_arr + deltaR
         r_arr = np.reshape(r_arr, (1, r_arr.size))
-        krs = np.reshape(krs, (krs.size, 1))
+        krs = np.reshape(krs, (M, 1))
         range_dep = np.exp(-1j*r_arr*krs) / np.sqrt(krs.real*r_arr) # num modes x num ranges
         # expand for receiver depth and source depth
         range_dep = np.reshape(range_dep, ((1,1, range_dep.shape[0], range_dep.shape[1])))
@@ -158,7 +161,7 @@ def get_arr_pressure(phi_zs, phi_zr, krs, r_arr, deltaR=np.array([0.0])):
         # sum over modes
         p = np.sum(prod, axis=2)
         corr_phase = np.exp(+1j*np.mean(krs)*deltaR)
-        corr_phase = np.reshape(corr_phase, (1, phi_zr.shape[0], 1))
+        corr_phase = np.reshape(corr_phase, (1, Nzr, 1))
         p *= corr_phase
     p *= 1j*np.exp(1j*np.pi/4) # assumes rho is 1 at source depth
     p /= np.sqrt(8*np.pi)
