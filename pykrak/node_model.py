@@ -75,29 +75,30 @@ class NodeEnv(Env):
         that matches the original passed environment
         """
         N = self.z_arr.size 
-        x = np.zeros((N+1, 5))
-        x[:-1, 0] = np.linspace(0, N-1, N, dtype=int)
-        x[:-1, 1] = self.z_arr
-        x[:-1, 2] = self.c_arr
-        x[:-1, 3] = self.rho_arr
-        x[:-1, 4] = self.attn_arr
+        x = np.zeros((N+1, 4))
+        x[:-1, 0] = self.z_arr
+        x[:-1, 1] = self.c_arr
+        x[:-1, 2] = self.rho_arr
+        x[:-1, 3] = self.attn_arr
         x[-1, 0] = self.c_hs
         x[-1, 1] = self.rho_hs
-        x[-1, 1] = self.attn_hs
+        x[-1, 2] = self.attn_hs
         return x
 
     def get_forward_p(self, h_mesh):
-        """
-        Forward model p is a function 
+        """ Forward model p is a function 
         That takes in
         r_arr: array of receiver ranges
         zs_arr: array of source depths
         zr_arr: array of receiver depths
         tilt: float (tilt of array) 
-        x0 : array of perturbations to sound speed
-             [node_ind, z, c_p, rho, attn]
-             last row is [c_hs, rho_hs, attn_hs, 0, 0]
-             past in -1 for values if you don't want them to change
+        x0 : array of profile values
+            first column is node depth
+            second is c
+            third is rho
+            fourth is attn
+            last row is halfspace
+            c, rho, attn, 0
         """
 
         freq = self.freq
@@ -107,33 +108,28 @@ class NodeEnv(Env):
         cmin = self.cmin
         cmax = self.cmax
 
-        def get_p(r_arr, zs_arr, zr_arr, tilt, x0):
+        def get_p(r_arr, zs_arr, zr_arr, tilt, x):
             """
             First insert the values in x0 in the nodes 
             Note that I don't update the halfspace values here
             """
-            num_perts = x0.shape[0]-1
-            tmp_ind_arr = ind_arr.copy()
-            tmp_c_arr = c_arr.copy()
-            tmp_rho_arr = rho_arr.copy()
-            tmp_attn_arr = attn_arr.copy()
-            tmp_z_arr = z_arr.copy()
 
-            for i in range(num_perts):
-                node_ind, z, c, rho, attn = x0[i,:]
-                node_ind = int(node_ind)
-
-                # if it's a layer point make sure you adjust the depth of the shared node depth
-                if node_ind < z_arr.size-1:
-                    if z_arr[node_ind + 1] == z_arr[node_ind]:
-                        z_arr[node_ind + 1] = z
-                if node_ind > 0:
-                    if z_arr[node_ind - 1] == z_arr[node_ind]:
-                        z_arr[node_ind - 1] = z
-                z_arr[node_ind] = z
-                c_arr[node_ind] = c
-                rho_arr[node_ind] = rho
-                attn_arr[node_ind] = attn
+            N_node = x.shape[0] - 1
+            ind_arr = [0]
+            z_arr = np.zeros(N_node)
+            c_arr = np.zeros(N_node)
+            rho_arr = np.zeros(N_node)
+            attn_arr = np.zeros(N_node)
+            for i in range(N_node):
+                z, c, rho, attn = x[i,:]
+                z_arr[i] = z
+                c_arr[i] = c
+                rho_arr[i] = rho
+                attn_arr[i] = attn
+                if i > 0: # if depth is doubled it's a layer depth
+                    if z == z_arr[i-1]:
+                        ind_arr.append(i)
+            ind_arr = np.array(ind_arr)
 
             """
             Now put the node values onto a mesh with linear interpolation
@@ -184,7 +180,7 @@ class NodeEnv(Env):
             """
             Deal with halfspace
             """
-            c_hs, rho_hs, attn_hs = x0[-1,0], x0[-1,1], x0[-1,2]
+            c_hs, rho_hs, attn_hs = x[-1,0], x[-1,1], x[-1,2]
             attn_hs_npm = conv_factor * attn_hs
             c_hs = c_hs + 1j*get_c_imag_npm(c_hs, attn_hs_npm, 2*np.pi*freq)
             k_hs_sq = (2*np.pi*freq/c_hs)**2
