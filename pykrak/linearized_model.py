@@ -141,8 +141,8 @@ class LinearizedEnv(Env):
 
         attn_arr = self.attn_arr
         rho_hs, c_hs, attn_hs = self.rho_hs, self.c_hs, self.attn_hs
-        attn_npm = attn*self.conv_factor
-        c_hs_imag = get_c_imag_npm(c_hs, attn_npm, omega)
+        attn_hs_npm = attn_hs*self.conv_factor
+        c_hs_imag = get_c_imag_npm(c_hs, attn_hs_npm, omega)
         tmp_c_hs  = c_hs + 1j * c_hs_imag
         k_hs_sq = omega**2 / tmp_c_hs**2
 

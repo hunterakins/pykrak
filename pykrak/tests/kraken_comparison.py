@@ -20,7 +20,7 @@ from pykrak import pykrak_env as pke
 import os
 
 
-env_files = ['pekeris.env', 'pekeris_attn.env']
+env_files = ['pekeris_layer_attn.env', 'pekeris.env', 'pekeris_attn.env']
 for env in env_files:
     os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
     TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env('at_files/{}.env'.format(env[:-4]), 'kraken')
@@ -28,12 +28,18 @@ for env in env_files:
     modes = rw.read_modes(**{'fname':'at_files/{}.mod'.format(env[:-4]),
                             'freq':freq})
     krak_k = modes.k
+    krak_modes = modes.phi
+    print(krak_modes.shape)
+    z=modes.z
+    print('z0', z[0])
 
     krak_prt_k, mode_nums = th.read_krs_from_prt_file('at_files/{}.prt'.format(env[:-4]))
     print('krak M', modes.M)
 
     pykrak_env, N_list = th.init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax)
     pk_krs = pykrak_env.get_krs(**{'N_list':N_list, 'Nh':1, 'cmax':pykrak_env.c_hs-1e-10})
+    phi_z, phi = pykrak_env.phi_z, pykrak_env.phi
+    
     print('pykrak M', pk_krs.size)
     for i in range(len(krak_prt_k)):
         mode_num = mode_nums[i]

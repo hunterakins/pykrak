@@ -38,8 +38,9 @@ def downslope_test():
     rho_w = 1.0
     c_hs = 1800.0
     rho_hs = 2.0
-    attn_hs = 0.2
-    attn_units = 'dbpkmhz'
+    attn_hs = 0.01
+    #attn_units = 'dbpkmhz'
+    attn_units = 'npm'
     mesh_dz = (1500 / freq) / 20 # lambda /20 spacing
 
     cmin = 1500.0
@@ -80,6 +81,8 @@ def downslope_test():
         krs_str = krs.astype(str)
         with open('cm_log.txt', 'a') as f:
             f.write('Running pykrak for depth {0} with mesh N: {1}\n'.format(Z, N_list))
+            for tmp_j in range(env.z_arr.size):
+                f.write('{}, {}, {}, {}\n'.format(env.z_arr[tmp_j], env.c_arr[tmp_j], env.rho_arr[tmp_j], env.attn_arr[tmp_j]))
             for i in range(krs.size):
                 f.write('{0}  {1}\n'.format(i + 1, krs_str[i]))
         phi = modes.phi
@@ -139,7 +142,7 @@ def downslope_test():
         ssp, bdy = get_krak_inputs(env, twod=True)
 
         NMESH = nmesh_list[seg_i]
-        NMESH = [x-1 for x in NMESH]
+        NMESH = [x for x in NMESH]
         if seg_i == 0:
             append = False
         else:
