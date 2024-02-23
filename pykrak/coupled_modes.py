@@ -295,7 +295,6 @@ def compute_arr_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho
 
     rcvr_range_index = 0
     for i in range(1, rgrid.size):
-        print('i', i)
         r0 = rgrid[i-1]
         r1 = rgrid[i]
 

@@ -43,7 +43,6 @@ class CMModel(rdm.RangeDepModel):
         if self.comm.rank == 0:
             interface_range_list = self._get_interface_ranges()
             rgrid = np.array(interface_range_list)
-            print('rgrid', rgrid)
             M_list = [x.M for x in self.modes_list]
             M_max = max(M_list)
             modes_list = self.modes_list
@@ -57,7 +56,6 @@ class CMModel(rdm.RangeDepModel):
             rho_hs_list = [x.rho_hs for x in env_list]
 
             omega = 2*np.pi*self.env_list[0].freq
-            print('hi')
             p = cm.compute_arr_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list, rgrid, zs, zr, rs_grid, same_grid, cont_part_velocity=cont_part_velocity)
             field = np.squeeze(p)
             return field

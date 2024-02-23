@@ -14,6 +14,7 @@ import numpy as np
 from pykrak import pykrak_env, pressure_calc
 from pykrak import linearized_model as lm
 from pykrak import range_dep_model as rdm
+from pykrak.adia_modes import compute_arr_adia_pressure
 from matplotlib import pyplot as plt
 import mpi4py.MPI as MPI
 from interp.interp import get_spline, splint, vec_splint, vec_lin_int
@@ -28,7 +29,7 @@ class AdiabaticModel(rdm.RangeDepModel):
         #self.range_list = range_list # list of range that represents the env
         #self.ri = ri
 
-    def compute_field(self, zs, zr, rs):
+    def compute_field(self, zs, zr, rs_grid):
         """
         Compute the field at a set of receiver locations for a set of source depths
         Assume that the environments have been supplied in order, with the first environment
@@ -43,20 +44,14 @@ class AdiabaticModel(rdm.RangeDepModel):
             #M = min(M_list)
 
             rgrid, kr_arr = self._get_kr_arr(M_max) # throw out modes that don't exist at every range
-            mean_krs = self._get_mean_krs(rs, M_max) # integrate over ranges to get mean kr to use with rs in the pressure calc
-            M = mean_krs.size
-            #plt.figure()
-            #plt.plot(rgrid, kr_arr[0,:])
-            #plt.plot(rs/2, mean_krs[0], 'o')
-            #plt.show()
-
+            rgrid, zgrid, phi_arr = self._get_phi_arr(M_max)
             # compute the field at the receiver
             
             field = np.zeros((zs.size, zr.size), dtype=np.complex128)
-            phi_zs = self.get_phi_zs(zs, M)
-            phi_zr = self.get_phi_zr(zr, M, rgrid, rs)
-            p = pressure_calc.get_arr_pressure(phi_zs, phi_zr, mean_krs, np.array([rs]))
+            p = compute_arr_adia_pressure(kr_arr, phi_arr, zgrid, rgrid, zs, zr, rs_grid)
             field = np.squeeze(p)
+        else:
+            field = np.zeros((1))
         return field
 
 @jit

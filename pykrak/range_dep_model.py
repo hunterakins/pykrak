@@ -33,8 +33,8 @@ def range_interp_krs(rpt, rgrid, kr_arr):
     else:
         klo, khi = interp.get_klo_khi(rpt, rgrid)
         dr = rgrid[khi] - rgrid[klo]
-        kr_left = kr_arr[:, klo]
-        kr_right = kr_arr[:, khi]
+        kr_left = kr_arr[klo,:]
+        kr_right = kr_arr[khi,:]
         a = (rgrid[khi] - rpt) / dr
         b = (rpt - rgrid[klo]) / dr
         # only include modes that exist at both ranges
@@ -85,11 +85,37 @@ class RangeDepModel:
         Return the range values as well
         """
         rgrid = np.array(self.range_list)
-        kr_arr = -np.ones((M_max, rgrid.size), dtype=np.complex128)
+        kr_arr = -np.ones((rgrid.size, M_max), dtype=np.complex128)
         for i in range(self.n_env):
             M = self.modes_list[i].M
-            kr_arr[:M, i] = self.modes_list[i].krs[:M]
+            kr_arr[i,:M] = self.modes_list[i].krs[:M]
         return rgrid, kr_arr
+
+    def _get_phi_arr(self, M_max):
+        """
+        Get a matrix of phi values
+        First axis is environment, second is mode number, third is depth
+        """
+        zgrid = self.modes_list[0].z
+        Nz = zgrid.size
+        rgrid = np.array(self.range_list)
+        Nr = self.n_env
+        phi_arr = -np.ones((Nr, M_max, Nz))
+        for i in range(self.n_env):
+            modesi = self.modes_list[i]
+            M = modesi.M
+            phi = modesi.phi.T
+            Nzi = modesi.z.size
+            if Nzi != Nz:
+                #print(modesi.z.size, Nz)
+                #raise ValueError("Nz is not the same for all environments")
+                phi_tmp = np.zeros((M, Nz))
+                for j in range(M):
+                    phi_tmp[j,:] = interp.vec_lin_int(zgrid, modesi.z, phi[j,:])
+            else:
+                phi_arr[i, :M, :] = phi.copy()
+
+        return rgrid, zgrid, phi_arr
 
     def _get_mean_krs(self, rs, M_max):
         """
@@ -117,16 +143,16 @@ class RangeDepModel:
         rgrid = rgrid[inds]
         if rgrid[-1] != rs:
             raise ValueError('Bug in the code in get_mean_krs')
-        kr_arr = kr_arr[:, inds]
+        kr_arr = kr_arr[inds,:]
 
         # now eliminate modes that don't exist at all ranges
         kr_inds = np.all(kr_arr.real > 0, axis=1)
 
-        kr_arr = kr_arr[kr_inds, :]
+        kr_arr = kr_arr[:, kr_inds]
         M = kr_arr.shape[0]
         mean_krs = np.zeros(M, dtype=np.complex128)
         for i in range(M):
-            mean_krs[i] = np.trapz(kr_arr[i,:], rgrid)/rgrid[-1]
+            mean_krs[i] = np.trapz(kr_arr[:,i], rgrid)/rgrid[-1]
         return mean_krs
 
     def get_phi_zs(self, zs, M):
