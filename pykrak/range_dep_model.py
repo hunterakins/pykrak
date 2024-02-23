@@ -49,8 +49,7 @@ class RangeDepModel:
         self.range_list = range_list # list of range that represents the env
         self.comm = comm
 
-
-    def run_models(self, freq, x0_list):
+    def run_models(self, x0_list):
         """
         Solve for krs and mode shapes for each environment
         """
@@ -58,7 +57,6 @@ class RangeDepModel:
         rank = self.comm.Get_rank()
         env = self.env_list[rank]
         x0 = x0_list[rank]
-        env.add_freq(freq)
         env.add_x0(x0)
         modes = env.full_forward_modes()
         modes_list = self.comm.gather(modes, root=0)
@@ -144,4 +142,5 @@ class RangeDepModel:
         #phi_zr = phi_zr[:,:M]
         return phi_zr
 
+        
 

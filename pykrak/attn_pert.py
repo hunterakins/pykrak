@@ -49,7 +49,6 @@ def get_c_imag(c_real, attn, attn_units, omega):
     c_imag = attn_npm * c_real**2 / omega
     return c_imag
 
-
 def get_attn_conv_factor(units='npm', *args):
     """
     Get conversion factor to get attnuation into correct units
@@ -84,11 +83,12 @@ def get_attn_conv_factor(units='npm', *args):
                             dbpkmhz, q')
 
 @njit
-def alpha_layer_integral(phim_layer, ki_sq, rho, dz):
+def alpha_layer_integral(phim_layer, k_sq_imag, rho, dz):
     """
     Trapezoid rule
+    Equation 5.174 and 5175 in JKPS
     """
-    layer_integrand = ki_sq*np.square(phim_layer)  / rho
+    layer_integrand = k_sq_imag*np.square(phim_layer)  / rho
     integral = dz*(np.sum(layer_integrand) - .5*layer_integrand[0] - .5*layer_integrand[-1])
     alpha_layer = integral
     return alpha_layer
@@ -125,6 +125,7 @@ def add_attn(omega, krs, phi, h_list, z_list, k_sq_list, rho_list, k_hs_sq, rho_
     pert_krs = np.zeros((krs.size), dtype=np.complex128)
     num_modes = krs.size
     num_layers = len(h_list)
+
     for i in range(num_modes):
         layer_ind = 0
         phim = phi[:,i]
@@ -137,9 +138,10 @@ def add_attn(omega, krs, phi, h_list, z_list, k_sq_list, rho_list, k_hs_sq, rho_
             k_sq = k_sq_list[j]
             rho = rho_list[j]
             dz = h_list[j]
+
             alpha_layer = alpha_layer_integral(phim_layer, k_sq.imag, rho, dz)
             alpham += alpha_layer
-            layer_ind += num_pts - 1
+            layer_ind += num_pts - 1 #since this layer point appears twice...
         gammam = np.sqrt(np.square(krm) - k_hs_sq)
         # add tail contribution
         #bott_weight = (gammam.real - gammam).imag / rho_hs
@@ -188,9 +190,9 @@ def add_arr_attn(omega, krs, phi, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs
     integrator = get_layered_attn_integrator(h_arr, ind_arr, z_arr, k1_sq_arr, rho_arr)
     krs_i_sq = np.zeros(krs.size)
     for m in range(krs.size):
-        krm = krs[m]**2
+        krm = krs[m]
         phim = phi[:,m]
-        # integate through layers
+        # integrate through layers
         alpha = np.sum(np.square(phim) * integrator)
 
         # add contribution from tail
