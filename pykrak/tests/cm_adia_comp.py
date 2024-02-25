@@ -132,7 +132,6 @@ def speed_test1():
 
         zs = np.array([25.])    
         same_grid = False
-        ranges = np.linspace(100.0, 10*1e3, 1000)
 
         zout = np.linspace(0.0, Zvals.max(), nmesh_list[-1][0])
         zr = zout[1:]
@@ -144,6 +143,7 @@ def speed_test1():
 
         if rank == 0:
             if i == 0:
+                p_tl = 20*np.log10(np.abs(adia_p_arr)) 
                 plt.figure()
                 plt.suptitle('Adiabatic')
                 plt.pcolormesh(ranges[1:]*1e-3, zr, p_tl)
@@ -151,7 +151,7 @@ def speed_test1():
                 plt.colorbar()
     plt.show()
 
-# for grid calculations
+# for single range calculations
 def speed_test2():
     for i in range(3):
         now = time.time()
@@ -227,24 +227,23 @@ def speed_test2():
 
         zs = np.array([25.])    
         same_grid = False
-        ranges = np.linspace(9900.0, 10*1e3,1000)
+        rs_grid = np.array([10000.0])
 
         zout = np.linspace(0.0, Zvals.max(), nmesh_list[-1][0])
         zr = zout[1:]
 
         now = time.time()
-        p_arr = rdm.compute_field(zs, zr, ranges[1:], same_grid=same_grid, cont_part_velocity=False)
+        p_arr = rdm.compute_field(zs, zr, rs_grid, same_grid=same_grid, cont_part_velocity=False)
         if rank == 0:
             print('cm field comp time', time.time() - now)
 
         if rank == 0:
             if i == 0:
                 p_tl = 20*np.log10(np.abs(p_arr)) 
-                plt.figure()
+                fig, axes = plt.subplots(2,1, sharex=True)
                 plt.suptitle('CM')
-                plt.pcolormesh(ranges[1:]*1e-3, zr, p_tl)
-                plt.gca().invert_yaxis()
-                plt.colorbar()
+                axes[0].plot(zr, p_tl)
+                axes[1].plot(zr, np.angle(p_arr))
 
         # do it with the adia model
         rdm = AdiabaticModel(range_list, env_list, comm)
@@ -258,18 +257,17 @@ def speed_test2():
         zr = zout[1:]
 
         now = time.time()
-        adia_p_arr = rdm.compute_field(zs, zr, ranges[1:])
+        adia_p_arr = rdm.compute_field(zs, zr, rs_grid)
         if rank == 0:
             print('adia field comp time', time.time() - now)
 
         if rank == 0:
             if i == 0:
-                p_tl = 20*np.log10(np.abs(p_arr)) 
-                plt.figure()
-                plt.suptitle('Adiabatic')
-                plt.pcolormesh(ranges[1:]*1e-3, zr, p_tl)
-                plt.gca().invert_yaxis()
-                plt.colorbar()
+                p_tl = 20*np.log10(np.abs(adia_p_arr)) 
+                fig, axes = plt.subplots(2,1, sharex=True)
+                plt.suptitle('Adia')
+                axes[0].plot(zr, p_tl)
+                axes[1].plot(zr, np.angle(adia_p_arr))
     plt.show()
 
 

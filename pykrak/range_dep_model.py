@@ -52,6 +52,7 @@ class RangeDepModel:
     def run_models(self, x0_list):
         """
         Solve for krs and mode shapes for each environment
+        Share with all with root
         """
         modes_list = []
         rank = self.comm.Get_rank()
@@ -59,8 +60,16 @@ class RangeDepModel:
         x0 = x0_list[rank]
         env.add_x0(x0)
         modes = env.full_forward_modes()
-        modes_list = self.comm.gather(modes, root=0)
-        self.modes_list = modes_list
+        if self.n_env == 1:
+            modes_list = [modes]
+            self.modes = modes # let each process save its modes
+            self.modes = modes # let each process save its modes
+            self.modes_list = modes_list
+            self.modes_list = modes_list
+        else:
+            modes_list = self.comm.gather(modes, root=0)
+            self.modes = modes # let each process save its modes
+            self.modes_list = modes_list
         return modes_list
 
     def _get_interface_ranges(self):
@@ -107,7 +116,6 @@ class RangeDepModel:
             phi = modesi.phi.T
             Nzi = modesi.z.size
             if Nzi != Nz:
-                #print(modesi.z.size, Nz)
                 #raise ValueError("Nz is not the same for all environments")
                 phi_tmp = np.zeros((M, Nz))
                 for j in range(M):
@@ -123,6 +131,10 @@ class RangeDepModel:
         Using the trapezoid rule
         """
         rgrid, kr_arr = self._get_kr_arr(M_max)
+
+        if self.n_env == 1:
+            return kr_arr[0,:]
+
         if rs > rgrid[-1]:
             raise ValueError("rs is outside of the range of the model")
         # insert rs into the grid of model ranges and interpolate kr wavenumbers
@@ -146,10 +158,10 @@ class RangeDepModel:
         kr_arr = kr_arr[inds,:]
 
         # now eliminate modes that don't exist at all ranges
-        kr_inds = np.all(kr_arr.real > 0, axis=1)
+        kr_inds = np.all(kr_arr.real > 0, axis=0)
 
         kr_arr = kr_arr[:, kr_inds]
-        M = kr_arr.shape[0]
+        M = kr_arr.shape[1]
         mean_krs = np.zeros(M, dtype=np.complex128)
         for i in range(M):
             mean_krs[i] = np.trapz(kr_arr[:,i], rgrid)/rgrid[-1]

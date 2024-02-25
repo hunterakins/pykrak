@@ -69,48 +69,29 @@ def range_interp_krs_phi(rpt, rgrid, kr_arr, phi_arr):
 def get_M(krs):
     return np.sum(krs != -1.0)
 
-#@njit(cache=True)
-def compute_arr_adia_pressure(krs_arr, phi_arr, zgrid, rgrid, zs, zr, rs_grid):
+@njit(cache=True)
+def compute_arr_adia_pressure(krs_arr, phi_zs, phi_zr, rgrid, rs_grid):
     """
     krs - array of wavenumbers, padded to maximum mode num
         shape (num environment segments, M_max)
-    phi_arr - array of mode shapes padded to maximum mode num
-        shape (num env segments, M_max, depths)
-    zgrid - array of tabulated depths for mode shapes
+    phi_zs - array of mode source amplitues
+        shape (num sources, num modes)
+    phi_zr - array of mode shapes padded to maximum mode num
+        shape (num env segments, M_max, num rcvr depths)
     rgrid - array of ranges at which the environment segments are centered
-    zs - array 
-        source depths
-    zr - array
-        receiver depths
     rs_grid - array
         source-receiver ranges (source assumed at rgrid[0])
         
     Assumes all modes have been evaluated on same grid 
     """
-    Ns = zs.size
-    Nr = zr.size
     Nrr = rs_grid.size
 
     #print('Ns, Nr, Nrr', Ns, Nr, Nrr)
+    Ns = phi_zs.shape[0]
+    Nr = phi_zr.shape[1] # first axis is environment
 
     pressure_out = np.zeros((Ns, Nr, Nrr), dtype=np.complex128)
     M_max = krs_arr.shape[-1]
-  
-    #print('M mqax', M_max)
-    now = time.time()
-    phi_zs = np.zeros((Ns, M_max))
-    for i in range(M_max):
-        phi_zs[:,i] = interp.vec_lin_int(zs, zgrid, phi_arr[0,i,:])
-
-    print('phi zs interp', time.time()-now)
-
-    now = time.time()
-
-    phi_zr = np.zeros((rgrid.size, Nr, M_max))
-    for j in range(rgrid.size):
-        for mi in range(M_max):
-            phi_zr[j,:,mi] = interp.vec_lin_int(zr, zgrid, phi_arr[j,mi,:])
-    print('phi zr interp', time.time()-now)
 
     curr_env_seg = 0
     krs_curr = krs_arr[0,:]
@@ -143,7 +124,7 @@ def compute_arr_adia_pressure(krs_arr, phi_arr, zgrid, rgrid, zs, zr, rs_grid):
         dkrdr = (krsb - krsa) / (Ri1 - Ri0)
         dphidr = (phi_b - phi_a) / (Ri1 - Ri0)
         for r_ind in range(rs_i, rs_j):
-            now = time.time()
+            #now = time.time()
             rpt = rs_grid[r_ind]
             #print('getting field at', rpt)
             krs_seg = krsa + 0.5*dkrdr*(rpt - Ri0)
@@ -158,7 +139,7 @@ def compute_arr_adia_pressure(krs_arr, phi_arr, zgrid, rgrid, zs, zr, rs_grid):
             phi_seg = np.ascontiguousarray(phi_seg)
             p = get_arr_pressure(phi_zs, phi_seg, krs_eff, rpt_arr)
             pressure_out[...,r_ind] = p[...,0]
-            print('single loop press time', time.time()-now)
+            #print('single loop press time', time.time()-now)
         rs_i = rs_j
         krs_curr = 1/Ri1*(Ri0 *krs_curr  + (krsa + 0.5*dkrdr*(Ri1 - Ri0))*(Ri1 - Ri0))
         curr_env_seg += 1

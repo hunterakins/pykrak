@@ -29,6 +29,25 @@ class AdiabaticModel(rdm.RangeDepModel):
         #self.range_list = range_list # list of range that represents the env
         #self.ri = ri
 
+    def get_phi_zr_arr(self, zr): 
+        rank = self.comm.Get_rank()
+        modes = self.modes
+        phi = modes.phi
+        Nr = zr.size
+        phi_zr = np.zeros((Nr, modes.M))
+        for mi in range(modes.M):
+            phi_zr[:,mi] = vec_lin_int(zr, modes.z, phi[:,mi])
+        phi_zr_list = self.comm.gather(phi_zr, root=0)
+        if rank == 0:
+            M_max = max([x.M for x in self.modes_list])
+            phi_zr_arr = np.zeros((self.n_env, Nr, M_max))
+            for i in range(self.n_env):
+                M = phi_zr_list[i].shape[1]
+                phi_zr_arr[i,:,:M] = phi_zr_list[i]
+            return phi_zr_arr
+        else:
+            return None
+
     def compute_field(self, zs, zr, rs_grid):
         """
         Compute the field at a set of receiver locations for a set of source depths
@@ -36,19 +55,25 @@ class AdiabaticModel(rdm.RangeDepModel):
         corresponding to the source and the last environment corresponding to the receiver.
         The range associated with the environment is considered to be centered on the region
         it describes.
-        """
+        """ 
+        now = time.time()
+        phi_zr_arr = self.get_phi_zr_arr(zr)
         if self.comm.rank == 0:
             interface_range_list = self._get_interface_ranges()
             M_list = [x.M for x in self.modes_list]
+            modes = self.modes # for source segment this is always rank 0 
             M_max = max(M_list)
-            #M = min(M_list)
+            phi_zs = np.zeros((zs.size, M_max))
+            for i in range(modes.M):
+                phi_zs[:,i] = vec_lin_int(zs, modes.z, modes.phi[:,i])
 
             rgrid, kr_arr = self._get_kr_arr(M_max) # throw out modes that don't exist at every range
-            rgrid, zgrid, phi_arr = self._get_phi_arr(M_max)
+            #rgrid, zgrid, phi_arr = self._get_phi_arr(M_max)
+            #rgrid, zgrid, phi_arr = self._get_phi_arr(M_max)
             # compute the field at the receiver
             
             field = np.zeros((zs.size, zr.size), dtype=np.complex128)
-            p = compute_arr_adia_pressure(kr_arr, phi_arr, zgrid, rgrid, zs, zr, rs_grid)
+            p = compute_arr_adia_pressure(kr_arr, phi_zs, phi_zr_arr, rgrid, rs_grid)
             field = np.squeeze(p)
         else:
             field = np.zeros((1))
@@ -169,7 +194,6 @@ def full_freq_interp(des_freq_arr, freq_arr, mean_krs_arr, phi_zs_vals_arr, phi_
         phi_zr_vals = phi_zr_vals_arr[:,i, :][:, eval_inds]
         mode_des_freqs = des_freq_arr[des_inds]
         mode_eval_freqs = freq_arr[eval_inds]
-        #print(mode_eval_freqs.shape, 'num eval f')
         if mode_eval_freqs.size == 1:
             continue
         kr_interp, phi_zs_interp, phi_zr_interp = single_mode_freq_spl_interp(mode_des_freqs, mode_eval_freqs, kr_vals, phi_zs_vals, phi_zr_vals)
@@ -180,7 +204,7 @@ def full_freq_interp(des_freq_arr, freq_arr, mean_krs_arr, phi_zs_vals_arr, phi_
 
 class MultiFrequencyAdiabaticModel:
     def __init__(self, range_list, env_list, world_comm, model_freqs, pulse_freqs, model_comm):
-        self.env_list = env_list
+        self.env_list = env_list # one list for each frequency 
         self.range_list = range_list
         self.world_comm = world_comm
         self.world_rank = self.world_comm.Get_rank()
@@ -188,11 +212,11 @@ class MultiFrequencyAdiabaticModel:
         self.num_ranges = len(range_list)
         self.model_freqs = model_freqs
         self.pulse_freqs = pulse_freqs # array
-        self.freq = self.model_freqs[(self.world_rank // self.num_ranges)]
-        self.model = AdiabaticModel(range_list, env_list, model_comm)
+        self.freq_ind = self.world_rank // self.num_ranges
+        self.freq = self.model_freqs[self.freq_ind]
+        self.model = AdiabaticModel(range_list, env_list[self.freq_ind], model_comm)
         self.range_rank = model_comm.Get_rank()
         self.is_primary = self.range_rank == 0
-        #print('rank, freq', self.rank, self.freq)
 
     def run_model(self, zs, zr, rs, x0_list):
         """
@@ -213,7 +237,7 @@ class MultiFrequencyAdiabaticModel:
 
         # step 1: run model at the model frequencies
         now = time.time()
-        modes_list = self.model.run_models(self.freq, x0_list) # modes objects in list correspond to environment at given ranges
+        modes_list = self.model.run_models(x0_list) # modes objects in list correspond to environment at given ranges
         if self.is_primary:
             M_list = [x.M for x in modes_list]
             M_max = max(M_list)
@@ -221,14 +245,14 @@ class MultiFrequencyAdiabaticModel:
             M = mean_krs.size
             phi_zs = self.model.get_phi_zs(zs, M)
             phi_zr = self.model.get_phi_zr(zr, M, np.array(self.range_list), rs)
-
             if self.world_rank > 0:
                 self.world_comm.send(mean_krs, dest=0, tag=0)
                 self.world_comm.send(phi_zs, dest=0, tag=1)
                 self.world_comm.send(phi_zr, dest=0, tag=2)
 
+
         # step 2: use the rank 0 process to collect modal information from all envs
-        self.world_comm.Barrier()
+        #self.world_comm.Barrier()
         if self.world_rank == 0:
             mean_krs_freq_list = [mean_krs]
             phi_zs_freqs_list = [phi_zs]
@@ -243,7 +267,6 @@ class MultiFrequencyAdiabaticModel:
         if self.world_rank == 0:
             now = time.time()
             M_freq_list = [x.size for x in mean_krs_freq_list] #
-            #print('M list for freqs in the model', M_freq_list)
             M_max = max(M_freq_list)
             mean_krs_arr = -1*np.ones((M_max, self.num_freqs), dtype=np.complex128)
             phi_zs_arr = np.zeros((zs.size, M_max, self.num_freqs))
@@ -259,7 +282,6 @@ class MultiFrequencyAdiabaticModel:
             pulse_freq_mask = (self.pulse_freqs >= min(self.model_freqs)) & (self.pulse_freqs <= max(self.model_freqs)) 
             bounded_pulse_freqs = self.pulse_freqs[pulse_freq_mask]
             mean_krs_full_arr, phi_zs_full_arr, phi_zr_full_arr =  full_freq_interp(bounded_pulse_freqs, self.model_freqs, mean_krs_arr, phi_zs_arr, phi_zr_arr)
-            #print('this interp time', time.time() - now)
             
 
         fields = np.zeros((zs.size, zr.size, len(self.pulse_freqs)), dtype=np.complex128)
@@ -283,9 +305,8 @@ class MultiFrequencyAdiabaticModel:
                         pass
                     else:
                         
-                        #print('pf - bf', pf, bounded_pulse_freqs[bf_ind], mean_krs -bf_krs)
                         #plt.plot(self.pulse_freqs[pulse_freq_index]*np.ones(M), mean_krs.real, 'ro')
-                        p = pressure_calc.get_arr_pressure(phi_zs_arr, phi_zr_arr, bf_krs, rs)
+                        p = pressure_calc.get_arr_pressure(phi_zs_arr, phi_zr_arr, bf_krs, np.array([rs]))
                         field = np.squeeze(p)
                         count += 1
                     fields[...,pulse_freq_index] = field
