@@ -22,12 +22,8 @@ import time
 from numba import njit, jit
 
 class AdiabaticModel(rdm.RangeDepModel):
-    def __init__(self, range_list, env_list, comm):
-        super().__init__(range_list, env_list, comm)
-        #self.env_list = env_list # list of range-iidependent linearized env obnjects
-        #self.n_env = len(env_list)
-        #self.range_list = range_list # list of range that represents the env
-        #self.ri = ri
+    def __init__(self, range_list, env, comm):
+        super().__init__(range_list, env, comm)
 
     def get_phi_zr_arr(self, zr): 
         rank = self.comm.Get_rank()
@@ -68,8 +64,6 @@ class AdiabaticModel(rdm.RangeDepModel):
                 phi_zs[:,i] = vec_lin_int(zs, modes.z, modes.phi[:,i])
 
             rgrid, kr_arr = self._get_kr_arr(M_max) # throw out modes that don't exist at every range
-            #rgrid, zgrid, phi_arr = self._get_phi_arr(M_max)
-            #rgrid, zgrid, phi_arr = self._get_phi_arr(M_max)
             # compute the field at the receiver
             
             field = np.zeros((zs.size, zr.size), dtype=np.complex128)
@@ -79,7 +73,7 @@ class AdiabaticModel(rdm.RangeDepModel):
             field = np.zeros((1))
         return field
 
-@jit
+@njit(cache=True)
 def single_mode_freq_spl_interp(des_freq_arr, freq_arr, kr_arr, phi_zs_vals_arr, phi_zr_vals_arr):
     """
     Interpolate a single modes values onto a frequency grid
@@ -121,7 +115,7 @@ def single_mode_freq_spl_interp(des_freq_arr, freq_arr, kr_arr, phi_zs_vals_arr,
         phi_zr_out[i,:] = vec_splint(des_freq_arr, freq_arr, phi_zr_vals, phi_zr_spline)[0]
     return kr_out, phi_zs_out, phi_zr_out
 
-@jit
+@njit(cache=True)
 def single_mode_freq_lin_interp(des_freq_arr, freq_arr, kr_arr, phi_zs_vals_arr, phi_zr_vals_arr):
     """
     Interpolate a single modes values onto a frequency grid
@@ -203,8 +197,8 @@ def full_freq_interp(des_freq_arr, freq_arr, mean_krs_arr, phi_zs_vals_arr, phi_
     return mean_krs_full_arr, phi_zs_full_arr, phi_zr_full_arr
 
 class MultiFrequencyAdiabaticModel:
-    def __init__(self, range_list, env_list, world_comm, model_freqs, pulse_freqs, model_comm):
-        self.env_list = env_list # one list for each frequency 
+    def __init__(self, range_list, env, world_comm, model_freqs, pulse_freqs, model_comm):
+        self.env = env # one list for each frequency 
         self.range_list = range_list
         self.world_comm = world_comm
         self.world_rank = self.world_comm.Get_rank()
@@ -214,7 +208,7 @@ class MultiFrequencyAdiabaticModel:
         self.pulse_freqs = pulse_freqs # array
         self.freq_ind = self.world_rank // self.num_ranges
         self.freq = self.model_freqs[self.freq_ind]
-        self.model = AdiabaticModel(range_list, env_list[self.freq_ind], model_comm)
+        self.model = AdiabaticModel(range_list, env, model_comm)
         self.range_rank = model_comm.Get_rank()
         self.is_primary = self.range_rank == 0
 
@@ -235,8 +229,7 @@ class MultiFrequencyAdiabaticModel:
             spline?
         """
 
-        # step 1: run model at the model frequencies
-        now = time.time()
+        # step 1: run model at the model frequencies to get all modes
         modes_list = self.model.run_models(x0_list) # modes objects in list correspond to environment at given ranges
         if self.is_primary:
             M_list = [x.M for x in modes_list]
@@ -262,6 +255,7 @@ class MultiFrequencyAdiabaticModel:
                 mean_krs_freq_list.append(self.world_comm.recv(source=f_rank, tag=0))
                 phi_zs_freqs_list.append(self.world_comm.recv(source=f_rank, tag=1))
                 phi_zr_freqs_list.append(self.world_comm.recv(source=f_rank, tag=2))
+
 
         # step 3: interpolate the modal values onto the pulse frequencies
         if self.world_rank == 0:

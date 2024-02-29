@@ -43,9 +43,10 @@ def range_interp_krs(rpt, rgrid, kr_arr):
     return kr_vals
 
 class RangeDepModel:
-    def __init__(self, range_list, env_list, comm):
-        self.env_list = env_list # list of range-independent linearized env obnjects
-        self.n_env = len(env_list)
+    def __init__(self, range_list, env, comm):
+        #self.env_list = env_list # list of range-independent linearized env obnjects
+        self.env = env # env for this process 
+        self.n_env = len(range_list)
         self.range_list = range_list # list of range that represents the env
         self.comm = comm
 
@@ -56,7 +57,7 @@ class RangeDepModel:
         """
         modes_list = []
         rank = self.comm.Get_rank()
-        env = self.env_list[rank]
+        env = self.env
         x0 = x0_list[rank]
         env.add_x0(x0)
         modes = env.full_forward_modes()
@@ -69,7 +70,7 @@ class RangeDepModel:
         else:
             modes_list = self.comm.gather(modes, root=0)
             self.modes = modes # let each process save its modes
-            self.modes_list = modes_list
+            self.modes_list = modes_list # only root node will have this filled (I think)
         return modes_list
 
     def _get_interface_ranges(self):
@@ -104,31 +105,41 @@ class RangeDepModel:
         """
         Get a matrix of phi values
         First axis is environment, second is mode number, third is depth
+        Use zgrid of modes at first environment
         """
         zgrid = self.modes_list[0].z
         Nz = zgrid.size
         rgrid = np.array(self.range_list)
         Nr = self.n_env
         phi_arr = -np.ones((Nr, M_max, Nz))
-        for i in range(self.n_env):
-            modesi = self.modes_list[i]
-            M = modesi.M
-            phi = modesi.phi.T
-            Nzi = modesi.z.size
-            if Nzi != Nz:
-                #raise ValueError("Nz is not the same for all environments")
-                phi_tmp = np.zeros((M, Nz))
-                for j in range(M):
-                    phi_tmp[j,:] = interp.vec_lin_int(zgrid, modesi.z, phi[j,:])
-            else:
-                phi_arr[i, :M, :] = phi.copy()
+        rank = self.comm.Get_rank()
+        #for i in range(self.n_env):
+        modesi = self.modes_list[rank]
+        M = modesi.M
+        phi = modesi.phi.T
+        Nzi = modesi.z.size
+        if Nzi != Nz:
+            #raise ValueError("Nz is not the same for all environments")
+            phi_tmp = np.zeros((M, Nz))
+            for j in range(M):
+                phi_tmp[j,:] = interp.vec_lin_int(zgrid, modesi.z, phi[j,:])
+            phi = phi_temp
 
+        phi_list = self.comm.gather(phi, root=0)
+        M_list = self.comm.gather(M, root=0)
+        if rank == 0:
+            for i in range(self.n_env):
+                phi = phi_list[i]
+                M = M_list[i]
+                phi_arr[i, :M, :] = phi.copy()
+        else:
+            phi_arr = np.array([0.0])
         return rgrid, zgrid, phi_arr
 
     def _get_mean_krs(self, rs, M_max):
         """
         Get the averaged wavenumber for a receiver at range rs
-        Using the trapezoid rule
+        Use the trapezoid rule
         """
         rgrid, kr_arr = self._get_kr_arr(M_max)
 
@@ -179,6 +190,4 @@ class RangeDepModel:
         phi_zr = rcvr_modes.get_phi_zr(zr, M)
         #phi_zr = phi_zr[:,:M]
         return phi_zr
-
-        
 

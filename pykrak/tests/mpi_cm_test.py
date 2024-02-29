@@ -45,8 +45,8 @@ def downslope_test():
     rho_w = 1.0
     c_hs = 1800.0
     rho_hs = 2.0
-    attn_hs = 0.01
-    attn_units = 'dbpkmhz'
+    attn_hs = 0.2
+    attn_units = 'dbplam'
     mesh_dz = (1500 / freq) / 20 # lambda /20 spacing
 
     cmin = 1500.0
@@ -54,52 +54,50 @@ def downslope_test():
 
     # Pekeris waveguide at each segment
     krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list = [], [], [], [], [], []
-    nmesh_list = []
-    env_list = []
     x0_list = []
     range_list = [x for x in rgrid]
+    seg_i = rank
     # Make env_list 
-    for seg_i in range(num_segs):
-        Z = Zvals[seg_i]
-        env_z_list = [np.array([0.0, Z]), np.array([Z, Zmax])]
-        env_c_list = [np.array([cw, cw]), np.array([c_hs, c_hs])]
-        env_rho_list = [np.array([rho_w, rho_w]), np.array([rho_hs, rho_hs])]
-        env_attn_list = [np.array([0.0, 0.0]), np.array([attn_hs, attn_hs])]
-        N_list = [max(int(np.ceil(Z / mesh_dz)), 20), max(int(np.ceil(Zmax - Z)), 10)]
+    Z = Zvals[seg_i]
+    env_z_list = [np.array([0.0, Z]), np.array([Z, Zmax])]
+    env_c_list = [np.array([cw, cw]), np.array([c_hs, c_hs])]
+    env_rho_list = [np.array([rho_w, rho_w]), np.array([rho_hs, rho_hs])]
+    env_attn_list = [np.array([0.0, 0.0]), np.array([attn_hs, attn_hs])]
+    N_list = [max(int(np.ceil(Z / mesh_dz)), 20), max(int(np.ceil(Zmax - Z)), 10)]
 
-        if Z == Zmax: # don't need the layer domain extension
-            env_z_list = [env_z_list[0]]
-            env_c_list = [env_c_list[0]]
-            env_rho_list = [env_rho_list[0]]
-            env_attn_list = [env_attn_list[0]]
-            N_list = [N_list[0]]
-        print('Z', Z, env_attn_list)
+    if Z == Zmax: # don't need the layer domain extension
+        env_z_list = [env_z_list[0]]
+        env_c_list = [env_c_list[0]]
+        env_rho_list = [env_rho_list[0]]
+        env_attn_list = [env_attn_list[0]]
+        N_list = [N_list[0]]
 
 
-        nmesh_list.append(N_list)
+    nmesh_list = []
+    nmesh_list = comm.gather(N_list, root=0)
+    nmesh_list =  comm.bcast(nmesh_list, root=0)
 
+    print('nmesh_list', nmesh_list)
 
-        env = LinearizedEnv(freq, env_z_list, env_c_list, env_rho_list, env_attn_list, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
-        
-        env.add_c_pert_matrix(env.z_arr, np.zeros((env.z_arr.size,1)))
-        env_list.append(env)
-        x0_list.append(np.array([0.0]))
+    env = LinearizedEnv(freq, env_z_list, env_c_list, env_rho_list, env_attn_list, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
+    
+    env.add_c_pert_matrix(env.z_arr, np.zeros((env.z_arr.size,1)))
+    x0 = np.array([0.0])
+    x0_list = []
+    x0_list = comm.gather(x0, root=0)
+    x0_list = comm.bcast(x0_list, root=0)
 
-    # broadcast it
-    #comm.bcast(env_list, root=0)
-    #comm.bcast(range_list, root=0)
-    #comm.bcast(x0_list, root=0)
-    print('len env list', len(env_list))
-    print('len range list', len(range_list))
-    print('len x0 list', len(x0_list))
             
-
+    env_list = comm.gather(env, root=0)
 
 
     # Now we have all the values we need to run the coupled mode model
 
-    rdm = CMModel(range_list, env_list, comm)
+    print('running da model')
+    rdm = CMModel(range_list, env, comm)
+
     modes_list = rdm.run_models(x0_list)
+    print('done')
 
     zs = np.array([25.])    
     same_grid = False
@@ -194,93 +192,5 @@ def downslope_test():
         plt.show()
 
 
-def speed_test():
-    for i in range(3):
-        now = time.time()
-        freq = 100.0
-        omega = 2*np.pi*freq
-        Z0 = 100.0
-        Z1 = 200.0
-        R = 10*1e3
-        num_segs = size
-        Zvals = np.linspace(Z0, Z1, num_segs)
-        Zmax = Zvals.max()
-        rgrid = np.linspace(0.0, R, num_segs)
-        rcm_grid = cm.get_seg_interface_grid(rgrid)
-        cw = 1500.0
-        rho_w = 1.0
-        c_hs = 1800.0
-        rho_hs = 2.0
-        attn_hs = 0.01
-        attn_units = 'dbpkmhz'
-        mesh_dz = (1500 / freq) / 20 # lambda /20 spacing
-
-        cmin = 1500.0
-        cmax = 1799.0
-
-        # Pekeris waveguide at each segment
-        krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list = [], [], [], [], [], []
-        nmesh_list = []
-        env_list = []
-        x0_list = []
-        range_list = [x for x in rgrid]
-        # Make env_list 
-        for seg_i in range(num_segs):
-            Z = Zvals[seg_i]
-            env_z_list = [np.array([0.0, Z]), np.array([Z, Zmax])]
-            env_c_list = [np.array([cw, cw]), np.array([c_hs, c_hs])]
-            env_rho_list = [np.array([rho_w, rho_w]), np.array([rho_hs, rho_hs])]
-            env_attn_list = [np.array([0.0, 0.0]), np.array([attn_hs, attn_hs])]
-            N_list = [max(int(np.ceil(Z / mesh_dz)), 20), max(int(np.ceil(Zmax - Z)), 10)]
-
-            if Z == Zmax: # don't need the layer domain extension
-                env_z_list = [env_z_list[0]]
-                env_c_list = [env_c_list[0]]
-                env_rho_list = [env_rho_list[0]]
-                env_attn_list = [env_attn_list[0]]
-                N_list = [N_list[0]]
-
-
-            nmesh_list.append(N_list)
-
-
-            env = LinearizedEnv(freq, env_z_list, env_c_list, env_rho_list, env_attn_list, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
-            
-            env.add_c_pert_matrix(env.z_arr, np.zeros((env.z_arr.size,1)))
-            env_list.append(env)
-            x0_list.append(np.array([0.0]))
-
-        # broadcast it
-        #comm.bcast(env_list, root=0)
-        #comm.bcast(range_list, root=0)
-        #comm.bcast(x0_list, root=0)
-
-        if rank == 0:
-            print('forming environemnt objs', time.time()-now)
-
-
-        # Now we have all the values we need to run the coupled mode model
-
-        rdm = CMModel(range_list, env_list, comm)
-        now = time.time()
-        modes_list = rdm.run_models(x0_list)
-        if rank == 0:
-            print('model run time', time.time() - now)
-
-        zs = np.array([25.])    
-        same_grid = False
-        ranges = np.linspace(100.0, 10*1e3, 1000)
-
-        zout = np.linspace(0.0, Zvals.max(), nmesh_list[-1][0])
-        zr = zout[1:]
-
-        now = time.time()
-        p_arr = rdm.compute_field(zs, zr, ranges[1:], same_grid=same_grid, cont_part_velocity=False)
-        if rank == 0:
-            print('field comp time', time.time() - now)
-
-
-
 if __name__ == '__main__':
-    #downslope_test()
-    speed_test()
+    downslope_test()

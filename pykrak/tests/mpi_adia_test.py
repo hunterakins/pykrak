@@ -45,8 +45,8 @@ def downslope_test():
     rho_w = 1.0
     c_hs = 1800.0
     rho_hs = 2.0
-    attn_hs = 0.01
-    attn_units = 'dbpkmhz'
+    attn_hs = 0.2
+    attn_units = 'dbplam'
     mesh_dz = (1500 / freq) / 20 # lambda /20 spacing
 
     cmin = 1500.0
@@ -56,11 +56,45 @@ def downslope_test():
     krs_list, phi_list, zgrid_list, rho_list, rho_hs_list, c_hs_list = [], [], [], [], [], []
     nmesh_list = []
     env_list = []
-    x0_list = []
     range_list = [x for x in rgrid]
     # Make env_list 
     Ntot = int(Zmax / mesh_dz)
-    for seg_i in range(num_segs):
+
+   
+    if rank == 0:
+        for seg_i in range(num_segs):
+            Z = Zvals[seg_i]
+            env_z_list = [np.array([0.0, Z]), np.array([Z, Zmax])]
+            env_c_list = [np.array([cw, cw]), np.array([c_hs, c_hs])]
+            env_rho_list = [np.array([rho_w, rho_w]), np.array([rho_hs, rho_hs])]
+            env_attn_list = [np.array([0.0, 0.0]), np.array([attn_hs, attn_hs])]
+            Nwtr = int(Z / mesh_dz)
+            Nlyr = Ntot - Nwtr + 1
+            N_list = [Nwtr, Nlyr]
+
+            if Z == Zmax: # don't need the layer domain extension
+                env_z_list = [env_z_list[0]]
+                env_c_list = [env_c_list[0]]
+                env_rho_list = [env_rho_list[0]]
+                env_attn_list = [env_attn_list[0]]
+                N_list = [Ntot]
+            print('N_list', N_list)
+            print("Ntot", sum(N_list))
+
+
+            nmesh_list.append(N_list)
+
+
+            env = LinearizedEnv(freq, env_z_list, env_c_list, env_rho_list, env_attn_list, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
+            
+            env.add_c_pert_matrix(env.z_arr, np.zeros((env.z_arr.size,1)))
+            env_list.append(env)
+
+        env = env_list[rank]
+        x0 = np.array([0.0])
+
+    else:
+        seg_i = rank
         Z = Zvals[seg_i]
         env_z_list = [np.array([0.0, Z]), np.array([Z, Zmax])]
         env_c_list = [np.array([cw, cw]), np.array([c_hs, c_hs])]
@@ -79,37 +113,34 @@ def downslope_test():
         print('N_list', N_list)
         print("Ntot", sum(N_list))
 
-
-        nmesh_list.append(N_list)
-
-
         env = LinearizedEnv(freq, env_z_list, env_c_list, env_rho_list, env_attn_list, c_hs, rho_hs, attn_hs, attn_units, N_list, cmin, cmax)
         
         env.add_c_pert_matrix(env.z_arr, np.zeros((env.z_arr.size,1)))
-        env_list.append(env)
-        x0_list.append(np.array([0.0]))
-
+        x0 = np.array([0.0])
+        x0_list = []
     # broadcast it
     #comm.bcast(env_list, root=0)
     #comm.bcast(range_list, root=0)
-    #comm.bcast(x0_list, root=0)
+    x0_list = comm.gather(x0, root=0)
+    x0_list = comm.bcast(x0_list, root=0)
     print('len env list', len(env_list))
     print('len range list', len(range_list))
     print('len x0 list', len(x0_list))
+    
             
 
 
 
     # Now we have all the values we need to run the coupled mode model
 
-    rdm = AdiabaticModel(range_list, env_list, comm)
+    rdm = AdiabaticModel(range_list, env, comm)
     modes_list = rdm.run_models(x0_list)
 
     zs = np.array([25.])    
     same_grid = False
     ranges = np.linspace(100.0, 10*1e3, 1000)
 
-    zout = np.linspace(0.0, Zvals.max(), nmesh_list[-1][0])
+    zout = np.linspace(0.0, Zvals.max(), Ntot)
     zr = zout[1:]
 
     p_arr = rdm.compute_field(zs, zr, ranges[1:])
