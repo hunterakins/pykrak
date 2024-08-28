@@ -20,6 +20,41 @@ from numba import njit
 from pykrak import pressure_calc as pc
 from pykrak.attn_pert import get_c_imag, get_attn_conv_factor, get_c_imag_npm
 from interp import interp
+from pykrak.misc import get_simpsons_integrator, get_layer_N
+
+@njit
+def get_layered_dkdc_integrator(h_arr, ind_arr, z_arr, k_sq_arr, c_arr, rho_arr):
+    """
+    Input
+    h_arr - array of mesh spacings for each layer
+    ind_arr - array of index of first value for each layer
+    z_arr - depths of the layer meshes concatenated
+    k_sq_arr - wavenumber square omega^2 / c^2 for the layer meshes concatenated
+    rho_arr - density of the layer meshes concatenated
+
+    Output - 
+    integrator - np array that contains the weights to apply to the mode product
+        to get the simpsons rule integration of the mode product with eta (equation 18b)
+    """
+    layer_N = get_layer_N(ind_arr, z_arr)
+    num_layers = len(layer_N)
+    for i in range(len(layer_N)):
+        if i < num_layers -1 :
+            k_sq_i = k_sq_arr[ind_arr[i]:ind_arr[i+1]]
+            rho_i = rho_arr[ind_arr[i]:ind_arr[i+1]]
+            c_i = c_arr[ind_arr[i]:ind_arr[i+1]]
+        else:
+            k_sq_i = k_sq_arr[ind_arr[i]:]
+            rho_i = rho_arr[ind_arr[i]:]
+            c_i = c_arr[ind_arr[i]:]
+        integrator_i = get_simpsons_integrator(layer_N[i], h_arr[i])[0,:]
+        integrator_i *= k_sq_i / (rho_i * c_i)
+        if i == 0:
+            integrator = integrator_i
+        else:
+            integrator[-1] += integrator_i[0] # phi shares points with previous layer
+            integrator = np.concatenate((integrator, integrator_i[1:]))
+    return -integrator
 
 class LinEnvError(Exception):
     pass
@@ -34,7 +69,7 @@ def get_ml_noise_lh(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_
         """
         """
         delta_c = model_matrix@x
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, _ = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
         phi_zr = get_phi_zr(zr, phi_z, phi)
         phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
         deltaR = get_delta_R(tilt, zr)
@@ -150,9 +185,9 @@ class LinearizedEnv(Env):
         cmin, cmax = self.cmin, self.cmax
         h_arr = self.h_arr
 
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
+        krs, phi, phi_z, ugs = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
         M = krs.size
-        self.modes = Modes(self.freq, krs, phi, M, phi_z)
+        self.modes = Modes(self.freq, krs, phi, M, phi_z, ugs)
         return self.modes
 
     def add_zs_arr(self, zs_arr):
@@ -210,6 +245,33 @@ class LinearizedEnv(Env):
         self.zfg = zfg
         return
 
+    def linearize_kr(self):
+        """
+        Get the kr matrices necessary for linearization of pressure field
+        """
+        omega = 2*np.pi*self.freq
+        ind_arr, z_arr, c_arr, rho_arr = self.ind_arr, self.z_arr, self.c_arr, self.rho_arr
+        h_arr = self.h_arr
+        attn_arr = self.attn_arr
+        rho_hs, c_hs, attn_hs = self.rho_hs, self.c_hs, self.attn_hs
+        cmin, cmax = self.cmin, self.cmax
+        modes = self.modes
+        M = modes.M
+        krs, phi = modes.krs, modes.phi
+        dkrda = np.zeros((M, self.P), dtype=np.complex128)
+        k_sq_arr = omega**2 / c_arr**2
+        integrator = get_layered_dkdc_integrator(h_arr, ind_arr, z_arr, k_sq_arr, c_arr, rho_arr)
+        print(integrator.shape)
+        print(phi.shape)
+        integrator = integrator[:, np.newaxis]
+        for k in range(self.P):
+            ck_arr = self.pert_c_arr[:, k][:, np.newaxis]
+            integrand = ck_arr * np.abs(phi)**2 / krs
+            dkrda_k = np.sum(integrator * integrand, axis=0) #integrate over depth
+            dkrda[:,k] = dkrda_k
+        self.dkrda = dkrda
+        return self.dkrda
+
     def linearize_forward_p(self):
         x0 = self.x0
         zfg_arr = self.zfg
@@ -252,7 +314,46 @@ class LinearizedEnv(Env):
             tmp_c_imag = get_c_imag_npm(tmp_c_arr, attn_arr_npm, omega)
             tmp_c_arr = tmp_c_arr + 1j * tmp_c_imag
             k_sq_arr = omega**2 / tmp_c_arr**2
-            krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
+            krs, phi, phi_z, ugs = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
+            M = krs.size
+            phi_zs = np.zeros((zs_arr.size, M))
+            phi_zr = np.zeros((zr_arr.size, M))
+            deltaR = pc.get_delta_R(tilt, zr_arr)
+            for i in range(M):
+                phi_zs[:,i] = interp.vec_lin_int(zs_arr, phi_z, phi[:,i])
+                phi_zr[:,i] = interp.vec_lin_int(zr_arr, phi_z, phi[:,i])
+            p_arr = pc.get_arr_pressure(phi_zs, phi_zr, krs, r_arr, deltaR) 
+            return p_arr
+        return get_p
+
+    def get_full_forward_p_func(self):
+        #x0 = self.x0
+        freq = self.freq
+        ind_arr, z_arr, c_arr, rho_arr = self.ind_arr, self.z_arr, self.c_arr, self.rho_arr
+        attn_arr = self.attn_arr
+        attn_arr_npm = self.conv_factor * attn_arr
+        omega = 2*np.pi*self.freq
+        pert_c_arr = self.pert_c_arr
+        attn_units = self.attn_units
+        rho_hs, c_hs, attn_hs = self.rho_hs, self.c_hs, self.attn_hs
+
+        attn_hs_npm = attn_hs*self.conv_factor # this is attenuation in nepers/meter
+        c_hs_imag = get_c_imag_npm(c_hs, attn_hs_npm, omega)
+
+        tmp_c_hs  = c_hs + 1j * c_hs_imag
+        k_hs_sq = omega**2 / tmp_c_hs**2
+        cmin, cmax = self.cmin, self.cmax
+        h_arr = self.h_arr
+
+
+        def get_p(r_arr, zs_arr, zr_arr, tilt, x0):
+            dc = (pert_c_arr @ x0)
+            print('dc hsape', dc.shape)
+            tmp_c_arr = c_arr + dc
+            tmp_c_imag = get_c_imag_npm(tmp_c_arr, attn_arr_npm, omega)
+            tmp_c_arr = tmp_c_arr + 1j * tmp_c_imag
+            k_sq_arr = omega**2 / tmp_c_arr**2
+            krs, phi, phi_z, ugs = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
             M = krs.size
             phi_zs = np.zeros((zs_arr.size, M))
             phi_zr = np.zeros((zr_arr.size, M))
@@ -274,7 +375,7 @@ def get_ml_noise_lh(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_
         """
         """
         delta_c = model_matrix@x
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, ugs = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
         phi_zr = get_phi_zr(zr, phi_z, phi)
         phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
         deltaR = get_delta_R(tilt, zr)
@@ -382,5 +483,3 @@ def test1():
 if __name__ == '__main__':
     test1()
     test1()
-    
-

@@ -34,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 def ug_layer_integral(omega, krm, phim_layer, c, rho, dz):
     layer_integrand = np.square(phim_layer) / np.square(c) / rho 
     integral = dz*(np.sum(layer_integrand) - .5*layer_integrand[0] - .5*layer_integrand[-1])
-    ug_layer = omega / krm *integral 
+    ug_layer = integral 
     return ug_layer
 
 def get_ugs(omega, krs, phi, h_list, z_list, c_list, rho_list,\
@@ -85,8 +85,61 @@ def get_ugs(omega, krs, phi, h_list, z_list, c_list, rho_list,\
             ugm += ug_layer
             layer_ind += num_pts - 1
         gammam = np.sqrt(np.square(krm) - np.square(omega / c_hs))
-        delta_ugm = np.square(phim[-1])*omega/(2*krm*gammam*np.square(c_hs)*rho_hs)
+        delta_ugm = np.square(phim[-1])/(2*gammam*rho_hs* c_hs**2)
         ugm += delta_ugm
+        ugm *= omega/ krm
         ugs[i] = 1/ugm
     return ugs
         
+
+from pykrak.misc import get_simpsons_integrator, get_layer_N
+@njit(cache=True)
+def get_layered_ug_integrator(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr):
+    """
+    Input
+    h_arr - array of mesh spacings for each layer
+    ind_arr - array of index of first value for each layer
+    z_arr - depths of the layer meshes concatenated
+    k_sq_arr - real part  wavenumber square omega^2 / c^2 for the layer meshes concatenated
+    rho_arr - density of the layer meshes concatenated
+
+    Output - 
+    integrator - np array that contains the weights to apply to the mode product
+        to get the simpsons rule integration of the mode product with eta (equation 18b)
+    """
+    layer_N = get_layer_N(ind_arr, z_arr)
+    num_layers = len(layer_N)
+    for i in range(len(layer_N)):
+        if i < num_layers -1 :
+            k_sq_i = k_sq_arr[ind_arr[i]:ind_arr[i+1]]
+            rho_i = rho_arr[ind_arr[i]:ind_arr[i+1]]
+        else:
+            k_sq_i = k_sq_arr[ind_arr[i]:]
+            rho_i = rho_arr[ind_arr[i]:]
+        integrator_i = get_simpsons_integrator(layer_N[i], h_arr[i])[0,:]
+        integrator_i *= k_sq_i / (rho_i)
+        if i == 0:
+            integrator = integrator_i
+        else:
+            integrator[-1] += integrator_i[0] # phi shares points with previous layer
+            integrator = np.concatenate((integrator, integrator_i[1:]))
+    return integrator
+
+@njit(cache=True)
+def get_arr_ug(omega, krs, phi, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs):
+    k_sq_arr = k_sq_arr.real
+    integrator = get_layered_ug_integrator(h_arr, ind_arr, z_arr, k_sq_arr.real, rho_arr)
+    ugs = np.zeros(krs.size)
+    for m in range(krs.size):
+        krm = krs[m]
+        phim = phi[:,m]
+        # integrate through layers
+        integ = np.sum(np.square(phim) * integrator)
+
+        # add contribution from tail
+        gamma = np.sqrt(np.square(krm) - k_hs_sq.real)
+        if gamma != 0:
+            delta_int = k_hs_sq.real*np.square(phim[-1])/(2*gamma*rho_hs)
+            integ += delta_int
+        ugs[m] = (omega * krm) / integ
+    return ugs

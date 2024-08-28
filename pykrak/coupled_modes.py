@@ -36,7 +36,15 @@ from interp import interp
 from numba import jit, njit
 from pykrak.attn_pert import get_c_imag
 
-@njit
+@njit(cache=True)
+def trapz(y, z):
+    DZ = z[1:] - z[:-1]
+    MEANDZ = 0.5*(DZ[1:] + DZ[:-1])
+    term1 = (y[1:-1])*MEANDZ
+    term2 = 0.5*(y[0]*DZ[0] + y[-1]*DZ[-1])
+    return np.sum(term1) + term2
+
+@njit(cache=True)
 def advance_a(a0, krs0, r0, r1):
     """
     Advance the mode amplitudes to the new interface at 
@@ -46,7 +54,7 @@ def advance_a(a0, krs0, r0, r1):
     a0_adv = a0*range_dep
     return a0_adv
 
-@njit
+@njit(cache=True)
 def compute_p_left(a0, krs0, phi0, r0, r1):
     """
     Given amplitudes a0 of modes at range r0
@@ -65,7 +73,7 @@ def compute_p_left(a0, krs0, phi0, r0, r1):
     p_left = np.sum(weighted_modes, axis=1)
     return p_left
 
-@njit
+@njit(cache=True)
 def compute_p_weighted_left(a0, krs0, phi0, r0, r1):
     """
     Given amplitude a0 of modes at range r0
@@ -79,7 +87,7 @@ def compute_p_weighted_left(a0, krs0, phi0, r0, r1):
     p_weighted_left = compute_p_left(tmp_a0, krs0, phi0, r0, r1)
     return p_weighted_left
 
-@njit
+@njit(cache=True)
 def get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, gammas1):
     """
     The grids from a mode run end at the lower halfspace which may differ from segment to segment
@@ -125,7 +133,7 @@ def get_on_new_grid(z0, z1, rho0, rho1, rho_hs0, rho_hs1, phi0, phi1, gammas0, g
         phi0_new[:,i] = interp.vec_lin_int(z1, z0, phi0[:,i])
     return z1, rho0_new, phi0_new, rho1, phi1
 
-@njit
+@njit(cache=True)
 def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z1, rho1, rho_hs1, r0, r1, same_grid, cont_part_velocity=True):
     """
     Given vector of amplitudes a0
@@ -147,6 +155,7 @@ def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z
         flag to indicate whether or not the grid is equal for all ranges
     cont_part_velocity - Boolean
         True to enforce continuity of particle velocity at segment interfaces
+        and averaged to get approximate single scattering in Porter er al Energy conservation in one-way models eq.n A22
         Set to False to do comparisons with KRAKEN
     """
     Z1 = np.max(z1) # get these before updating them in get on same grid...
@@ -169,13 +178,16 @@ def update_a0(a0, krs0, gammas0, phi0, z0, rho0, rho_hs0, krs1, gammas1, phi1, z
     for l in range(M1):
         phi1_l = phi1[:,l]
         # first integrate down to Z1_new
-        term1 = np.trapz(p_left / rho1 * phi1_l, z1) #
+        #term1 = np.trapz(p_left / rho1 * phi1_l, z1) #
+        #print('term1, myterm1', term1, trapz(p_left / rho1 * phi1_l, z1))
+        term1 = trapz(p_left / rho1 * phi1_l, z1)
         # now add the contribution to the integral from the tail
         tail1 = 1 / rho_hs1 * phi1_l[-1] * np.exp(-gammas1[l] *(Z1_new - Z1)) * np.sum(tail_values   / (gammas1[l] + gammas0))
         term1 += tail1
 
         # now do the particle velocity matching integral
-        term2 = np.trapz(p_weighted_left / rho0 * phi1_l, z1)
+        #term2 = np.trapz(p_weighted_left / rho0 * phi1_l, z1)
+        term2 = trapz(p_weighted_left / rho0 * phi1_l, z1)
         tail2 = 1 / rho_hs0 * phi1_l[-1] * np.exp(-gammas1[l] *(Z1_new - Z1)) * np.sum(tail_values_weighted   / (gammas1[l] + gammas0))
         term2 += tail2
         term2 /= krs1[l]
@@ -278,7 +290,6 @@ def compute_arr_cm_pressure(omega, krs_list, phi_list, zgrid_list, rho_list, rho
     rho0 = rho_list[0]
     rho_hs0 = rho_hs_list[0]
     c_hs0 = c_hs_list[0]
-
 
     pressure_out = np.zeros((Nr, rs_grid.size), dtype=np.complex128)
 

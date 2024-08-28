@@ -24,6 +24,7 @@ from pykrak.inverse_iteration import get_phi
 from pykrak.sturm_seq import get_comp_krs
 from numba import njit
 import numba as nb
+from pykrak.group_pert import get_arr_ug
 
 #float_arr_type = nb.types.Array(nb.f8, 1, 'A', readonly=True)
 #complex_arr_type = nb.types.Array(nb.c16, 1, 'A', readonly=True)
@@ -48,6 +49,22 @@ def get_phi_z(ind_arr, z_arr):
             phi_z = np.concatenate((phi_z, phi_z_i[1:])) # elimiinae doubled layer values
     return phi_z
 
+@njit(cache=True)
+def rm_doubled_pts(ind_arr, val_arr):
+    """
+    Remove doubled layer values in val_arr
+    """
+    N = ind_arr.size
+    for i in range(N):
+        if i < N-1:
+            val_z_i = val_arr[ind_arr[i]:ind_arr[i+1]]
+        else:
+            val_z_i = val_arr[ind_arr[i]:]
+        if i == 0:
+            val_z = val_z_i
+        else:
+            val_z = np.concatenate((val_z, val_z_i[1:])) # elimiinae doubled layer values
+    return val_z
 
 #@njit(tuple_type(nb.f8, float_arr_type, int_arr_type, float_arr_type, float_arr_type, float_arr_type, float_arr_type,nb.f8, nb.f8, nb.f8, nb.f8, nb.f8), cache=True)
 @njit(cache=True)
@@ -99,8 +116,8 @@ def get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, c
     else:
         comp_krs = krs + 1j*np.zeros(krs.size)
 
-    
     phi_z = get_phi_z(ind_arr, z_arr) #this gets rid of double entries in z_arr for layer interfaces
-        
-    return comp_krs, phi, phi_z
+    """ Compute group speed with perturbation theory and trapezoid rule """
+    ugs = get_arr_ug(omega, comp_krs.real, phi, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs)
+    return comp_krs, phi, phi_z, ugs
 

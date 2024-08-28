@@ -42,7 +42,6 @@ class CMModel(rdm.RangeDepModel):
             interface_range_list = self._get_interface_ranges()
             rgrid = np.array(interface_range_list)
             M_list = [x.M for x in self.modes_list]
-            M_max = max(M_list)
             modes_list = self.modes_list
 
             rho_list = [x.get_rho_grid(x.N_list) for x in env_list]

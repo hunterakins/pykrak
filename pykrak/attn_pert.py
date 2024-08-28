@@ -36,7 +36,7 @@ def get_c_imag_npm(c_real, attn_npm, omega):
 
 def get_c_imag(c_real, attn, attn_units, omega):
     if attn_units == 'dbplam' or attn_units == 'q':
-        lam = (1500.0 / (omega / (2*np.pi)))
+        lam = (c_real / (omega / (2*np.pi)))
         args = [lam]
     elif attn_units == 'dbpkmhz':
         f = omega / (2*np.pi)
@@ -67,7 +67,7 @@ def get_attn_conv_factor(units='npm', *args):
         if len(args) == 0:
             raise ValueError('Wavelength must be passed in if using dbplam')
         lam = args[0]
-        return 0.115 / lam
+        return 1/8.6858896 / lam
     elif units == 'dbpkmhz':
         f = args[0]
         if len(args) == 0:

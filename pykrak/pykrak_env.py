@@ -35,13 +35,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 class Modes:
-    def __init__(self, freq, krs, phi, M, z):
+    def __init__(self, freq, krs, phi, M, z, ugs):
         """ Mode output from a single frequency run """
         self.freq = freq
         self.krs = krs  
         self.phi = phi
         self.M = M
         self.z = z
+        self.ugs = ugs
 
     def get_phi_zr(self, zr, M=None):
         """
@@ -460,7 +461,8 @@ class Env:
         M = self.krs.size
         phi = self.phi
         z = self.get_phi_z()
-        modes = Modes(freq, krs, phi, M, z)
+        ugs = self.get_ugs()
+        modes = Modes(freq, krs, phi, M, z, ugs)
         self.mode_dict[freq] = modes
         return krs
         
@@ -470,15 +472,27 @@ class Env:
         """
         if ax is None:
             fig, ax = plt.subplots(1,1)
+            rhofig, rhoax = plt.subplots(1,1)
+            attnfig, attnax = plt.subplots(1,1)
         for i in range(len(self.z_list)):
             if color is None:
                 ax.plot(self.c_list[i], self.z_list[i])
+                rhoax.plot(self.rho_list[i], self.z_list[i])
+                attnax.plot(self.attn_list[i], self.z_list[i])
             else:
                 ax.plot(self.c_list[i], self.z_list[i], color)
+                rhoax.plot(self.rho_list[i], self.z_list[i], color)
+                attnax.plot(self.attn_list[i], self.z_list[i], color)
         ax.set_ylim([self.z_list[-1][-1] + 50, 0])
+        rhoax.set_ylim([self.z_list[-1][-1] + 50, 0])
+        attnax.set_ylim([self.z_list[-1][-1] + 50, 0])
         for i in range(len(self.z_list)):
             ax.hlines(self.z_list[i][-1], min([x.min() for x in self.c_list]), max([x.max() for x in self.c_list]), 'k', alpha=0.5)
+            rhoax.hlines(self.z_list[i][-1], min([x.min() for x in self.rho_list]), max([x.max() for x in self.rho_list]), 'k', alpha=0.5)
+            attnax.hlines(self.z_list[i][-1], min([x.min() for x in self.attn_list]), max([x.max() for x in self.attn_list]), 'k', alpha=0.5)
         ax.hlines(self.z_list[-1][-1], min([x.min() for x in self.c_list]), max([x.max() for x in self.c_list]), 'k')
+        rhoax.hlines(self.z_list[-1][-1], min([x.min() for x in self.rho_list]), max([x.max() for x in self.rho_list]), 'k')
+        attnax.hlines(self.z_list[-1][-1], min([x.min() for x in self.attn_list]), max([x.max() for x in self.attn_list]), 'k')
         mean_layer_c = sum([x.mean() for x in self.c_list]) / len(self.c_list)
         ax.text(mean_layer_c , self.z_list[-1][-1] +30 ,  '$c_b$:{0}, \n$\\rho_b$:{1}, \n$\\alpha_b$:{2}'.format(self.c_hs, self.rho_hs, self.attn_hs))
         return
