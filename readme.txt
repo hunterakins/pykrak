@@ -5,7 +5,6 @@ The model implementation uses numba to compile the routines so that it has simil
 
 Some small differences:
 - I continue to do bisection and Brent for all meshes instead of switching to secant method with deflation
-- Coupled mode here has continuity of particle velocity as well as pressure between segments
 
 A big difference:
 - Elastic layers are not supported 
