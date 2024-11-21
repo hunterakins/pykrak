@@ -295,3 +295,155 @@ def get_A_numba(h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, lam):
         upper_layer_ind += z.size - 1
     return a_diag, e1, d1
 
+
+def initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, c_low, c_high):
+    """
+    Initializes arrays defining difference equations.
+
+    Args:
+    h_arr - mesh size for the different layers
+    ind_arr - index of the start of each layer in z_arr
+    z_arr - array of depths , contains doubled interface points
+    omega2 - squared angular frequency
+    cp_arr - compressional wave speed (complex)
+    cs_arr - shear wave speed (complex)
+    rho_arr - density
+
+    cp_top - compressional wave speed in top hs
+    cs_top - shear wave speed in top hs
+    rho_top - density in top hs
+
+    rho_top = 0 for Pressure Release, rho_top = 1e10 for Rigid
+    Same for rho_bott
+
+    cp_bott - compressional wave speed in bottom hs
+    cs_bott - shear wave speed in bottom hs
+    rho_bott - density in bottom hs
+
+    c_low is min phase speed 
+    c_high is max phase speed
+    """
+    elastic_flag = False # set to true if any media are elastic
+    c_min = np.inf
+    Nmedia = h_arr.size # number of layers
+    n_points = z_arr.size # z_arr contains the doubled interface depths
+    first_acoustic = 0
+    last_acoustic = 0
+
+    # Allocate arrays
+    b1 = np.zeros(n_points, dtype=np.float64)
+    b1c = np.zeros(n_points, dtype=np.complex128)
+    b2 = np.zeros(n_points, dtype=np.float64)
+    b3 = np.zeros(n_points, dtype=np.float64)
+    b4 = np.zeros(n_points, dtype=np.float64)
+    rho_arr = rho_arr.copy()
+
+    # Process each medium
+    for medium in range(Nmedia):
+        ii = ind_arr[medium]
+        if medium == Nmedia - 1:
+            Nii = z_arr[ii:].size
+        else:
+            Nii = z_arr[ii : ii+1].size
+        print('Nii', Nii)
+
+        # Load diagonals
+        if np.real(cs_arr[ii]) == 0.0:  # Acoustic medium
+            c_min = min(c_min, np.min(np.real(cp_arr[ii:ii + Nii])))
+            b1[ii:ii + Nii] = -2.0 + h_arr[medium]**2 * np.real(omega2 / (cp_arr[ii:ii + Nii])**2)
+            b1c[ii:ii + Nii] = 1j * np.imag(omega2 / (cp_arr[ii:ii + Nii])**2)
+
+        else:  # Elastic medium
+            two_h = 2.0 * h_arr[medium]
+            for j in range(ii, ii + Nii):
+                c_min = min(np.real(cs_arr[j]), c_min)
+                cp2 = np.real(cp_arr[j])**2
+                cs2 = np.real(cs_arr[j])**2
+                b1[j] = two_h / (rho[j] * cs2)
+                b2[j] = two_h / (rho[j] * cp2)
+                b3[j] = 4.0 * two_h * rho[j] * cs2 * (cp2 - cs2) / cp2
+                b4[j] = two_h * (cp2 - 2.0 * cs2) / cp2
+                rho_arr[j] *= two_h * omega2
+
+    if rho_top == 0.0 or rho_top == 1e10: # pressure or rigid, no need to overwrite c_high
+        pass
+    else:
+        if cs_top != 0.0:
+            elastic_flag = True
+            c_min = min(c_min, np.real(cs_top))
+            c_high = min(c_high, np.real(cs_top))
+        else:
+            c_min = min(c_min, np.real(cp_top))
+
+    if rho_bott == 0.0 or rho_bott == 1e10: # pressure or rigid, no need to overwrite c_high
+        pass
+    else:
+        if cs_bott != 0.0:
+            elastic_flag = True
+            c_min = min(c_min, np.real(cs_bott))
+            c_high = min(c_high, np.real(cs_bott))
+        else:
+            c_min = min(c_min, np.real(cp_bott))
+            c_high = min(c_high, np.real(cp_bott))
+
+
+
+    if elastic_flag: # for Scholte wave
+        c_min *= 0.85
+    c_low = max(c_low, c_min)
+
+    return b1, b1c, b2, b3, b4, rho_arr, c_low, c_high, elastic_flag
+
+def acoustic_layers(x, f, g, iPower, h, ind_arr, h_arr, z_arr, b1, rho, CountModes, modeCount):
+    """
+    Shoot through acoustic layers
+    from the bottom, where there is a boundary condition
+    f p + g \dv{p}{z} / rho(z-) = 0
+    x - float 64, eigenvalue is x = kr^2
+    f, g are impedance functions at the bottom (float 64)
+    iPower - int, power of 10 for scaling the shooting solutions
+    h_arr - mesh array 
+
+    """
+
+    # Parameters
+    iPowerF = -50
+    Roof = 1.0e50
+    Floor = 1.0e-50
+
+    # Loop over successive acoustic media starting at the end and going up
+    for Medium in range(ind_arr.size-1, 0-1, -1):
+        hMedium = h_arr[Medium]
+        z_layer = z_arr[ind_arr[Medium]:ind_arr[Medium+1]]
+        NMedium = z_layer.size # includes interface points
+        h2k2 = hMedium**2 * x
+
+        ii = ind_arr[Medium] + NMedium 
+        rhoMedium = rho[ind_arr[Medium]]  # Density is homogeneous using value at the top of each medium
+
+        p1 = -2.0 * g
+        p2 = (b1[ii] - h2k2) * g - 2.0 * hMedium * f * rhoMedium
+
+        # Shoot (towards surface) through a single medium
+        for ii in range(ind_arr[Medium] + NMedium, ind_arr[Medium]-1, -1):
+            p0 = p1
+            p1 = p2
+            p2 = (h2k2 - B1[ii]) * p1 - p0
+
+            if CountModes:
+                if p0 * p1 <= 0.0:
+                    modeCount += 1
+
+            if abs(p2) > Roof:  # Scale if necessary
+                p0 *= Floor
+                p1 *= Floor
+                p2 *= Floor
+                iPower -= iPowerF
+
+        # Update f and g
+        rhoMedium = rho[ind_arr[Medium] + 1]  # Density at the top of the layer
+        f = -(p2 - p0) / (2.0 * hMedium * rhoMedium)
+        g = -p1
+    return f, g, iPower
+
+
