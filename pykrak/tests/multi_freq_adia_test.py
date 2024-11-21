@@ -85,7 +85,6 @@ def get_pulse_weights(T_spread):
     S = H*S
     return tgrid, signal, fgrid, S
 
-
 def downslope_test(num_freqs):
     T_spread = 8
     tgrid, signal, fgrid, S = get_pulse_weights(T_spread)
@@ -357,6 +356,7 @@ def ri_test():
     My fft library uses e^{i omega t} as the forward kernel, so I believe I should use 
     conjugate of acoustic weights
     """
+    print('rank', world_rank)
     if world_rank == 0:
         wg_weights = np.squeeze(wg_weights)
         print('wg wegihts shape')
@@ -407,6 +407,11 @@ def ri_test():
 
 
 if __name__ == '__main__':
+    world_comm = MPI.COMM_WORLD
+    world_rank = world_comm.Get_rank()
+    size = world_comm.Get_size()
+    print('rank', world_rank)
+    print('size', size)
     ri_test()
-    ri_test()
+    #ri_test()
     #downslope_test(6)

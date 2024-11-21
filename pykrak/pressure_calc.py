@@ -401,7 +401,6 @@ def get_doppler_vec_pressure_deriv(phi_zr, phi_zs, dphir_dk, dphis_dk, kr, r_ret
     full_deriv /= np.sqrt(8*np.pi)
     return full_deriv
 
-
 @njit
 def get_simple_doppler_vec_pressure(phi_zr, phi_zs, krs, rgrid, tgrid, ums, tilt_angles=None, zr=None):
     """

@@ -35,13 +35,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 class Modes:
-    def __init__(self, freq, krs, phi, M, z):
+    def __init__(self, freq, krs, phi, M, z, ugs):
         """ Mode output from a single frequency run """
         self.freq = freq
         self.krs = krs  
         self.phi = phi
         self.M = M
         self.z = z
+        self.ugs = ugs
 
     def get_phi_zr(self, zr, M=None):
         """
@@ -460,7 +461,8 @@ class Env:
         M = self.krs.size
         phi = self.phi
         z = self.get_phi_z()
-        modes = Modes(freq, krs, phi, M, z)
+        ugs = self.get_ugs()
+        modes = Modes(freq, krs, phi, M, z, ugs)
         self.mode_dict[freq] = modes
         return krs
         

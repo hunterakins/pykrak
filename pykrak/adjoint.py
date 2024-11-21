@@ -270,6 +270,30 @@ def get_dpda(zfg, krs, r, phi_zr, phi_zs):
     return dpda
 
 @njit(cache=True)
+def get_mode_dpda(zfg, krs, r, phi_zs):
+    """
+    Get the derivative of the modal amplitudes with respect to perturbation to
+    the environment
+    Integrate dpda against U_f(z) / rho(z) dz to obtain
+    d A / d a = ... \sum
+    """
+    M = krs.size
+    mode_dpda = np.zeros(M, dtype=np.complex_)
+    M = krs.size
+    rfg = get_rfg(krs, r)
+    prod = zfg * rfg
+    for f in range(M):
+        zg = zfg[f,:]
+        rg = rfg[f,:]
+        for g in range(M):
+            ug = phi_zs[0,g]
+            term = ug*zfg[f,g]*rfg[f,g]
+            mode_dpda[f] += term
+    mode_dpda *= .25*1j
+    return mode_dpda
+
+
+@njit(cache=True)
 def get_dpdaidaj(zfg_ai, zfg_aj, zfg_aiaj, krs, r, phi_zr, phi_zs):
     """
     Equation 20 a) in Thode and Kim
@@ -323,6 +347,37 @@ def get_dpda_arr(zfg_arr, krs, r_arr, phi_zr, phi_zs):
             for r_i in range(num_r):
                 dpda[zs_i, :, r_i, k] = get_dpda(zfg_k, krs, r_arr[r_i], phi_zr, phi_zs_i)
     return dpda
+
+@njit(cache=True)
+def get_mode_dpda_arr(zfg_arr, krs, r_arr, phi_zs):
+    """
+    Get the derivative of the mode amplitude with respect to the environment
+    for all of the parameters implicitly specificed in zfg_arr
+    zfg_arr - np 3d array
+        first axis is num parameters, second is mode number and third is mode number
+    krs - np 1d array
+        wavenumbers
+    r_arr - np 1d array
+        array of ranges
+    phi_zs - np 2d array
+        first index is source depth index, second is mode number
+    """
+
+    num_zs = phi_zs.shape[0]
+    M = krs.size
+    num_r = r_arr.size
+    P = zfg_arr.shape[0]    
+    mode_dpda = np.zeros((M, num_zs, num_r, P), dtype=np.complex128)
+    for k in range(P):
+        zfg_k = zfg_arr[k, :, :]
+        for zs_i in range(num_zs):
+            phi_zs_i = (phi_zs[zs_i,:])
+            phi_zs_i = np.reshape(phi_zs_i, (1, phi_zs_i.size))
+            for r_i in range(num_r):
+                mode_dpda[:, zs_i, r_i, k] = get_mode_dpda(zfg_k, krs, r_arr[r_i], phi_zs_i)
+    return mode_dpda
+
+
 
 @njit(cache=True)
 def get_kernel(h_arr, ind_arr, z_arr, c_arr, rho_arr, krs, phi_z, phi, omega, zr, zs, rgrid, stride):
