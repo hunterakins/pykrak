@@ -17,7 +17,7 @@ from pyat.pyat import env as pyat_env
 from pykrak.pykrak_env import Env
 import os
 
-def read_krs_from_prt_file(prt_file):
+def read_krs_from_prt_file(prt_file,verbose=True):
     """
     .mod files have krs in single precision
     .prt files are 16 digit rounded krs in double precision
@@ -29,27 +29,36 @@ def read_krs_from_prt_file(prt_file):
         for line in lines:
             line = line.strip(' ')
             if line[0] == 'I':
-                print(i)
+                if verbose:
+                    print(i)
                 break
             i += 1
         i += 1 # now i is the first mode one
         krs = []
         mode_nums = [] # krak will only print subset
+        vps = []
+        vgs = []
         while True:
             line = lines[i]
             line = line.strip(' ')
             if line[0] == '_':
-                return krs, mode_nums      
+                return krs, mode_nums, vps, vgs
             split_line = line.split(' ')
-            print(split_line)
             split_line = [x for x in split_line if x != '']
+            if verbose:
+                print(split_line)
             if float(split_line[2]) == 0.0:
                 krs.append(float(split_line[1]))
             else:
                 krs.append(float(split_line[1])+1j*float(split_line[2])) 
+            vp = float(split_line[3])
+            vg = float(split_line[4])
+            vps.append(vp)
+            vgs.append(vg)
+
             mode_nums.append(int(split_line[0]))
             i += 1
-    return krs, mode_nums
+    return krs, mode_nums, vps, vgs
             
 def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
     """

@@ -135,7 +135,7 @@ def get_ml_noise_lh(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_
         """
         """
         delta_c = model_matrix@x
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, _ = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
         phi_zr = get_phi_zr(zr, phi_z, phi)
         phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
         deltaR = get_delta_R(tilt, zr)
@@ -159,7 +159,7 @@ def get_ml_noise_lh_with_gradient(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr
         delta_c = model_matrix@x
         delta_c = delta_c.reshape(delta_c.size)
         tmp_c_arr = c_arr + delta_c
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, tmp_c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, _ = get_modes(freq, h_arr, ind_arr, z_arr, tmp_c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
         phi_zr = get_phi_zr(zr, phi_z, phi)
         phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
         deltaR = get_delta_R(tilt, zr)
@@ -199,7 +199,7 @@ def get_ml_noise_lh_with_grad_hess(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_ar
         delta_c = model_matrix@x
         delta_c = delta_c.reshape(delta_c.size)
         tmp_c_arr = c_arr + delta_c # this is the c_arr about which we compute gradient
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, tmp_c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, _ = get_modes(freq, h_arr, ind_arr, z_arr, tmp_c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
         phi_zr = get_phi_zr(zr, phi_z, phi)
         phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
         deltaR = get_delta_R(tilt, zr)
@@ -246,7 +246,7 @@ def get_ml_noise_lh_gridded(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn
         """
         """
         delta_c = model_matrix@x
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, _ = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
         phi_zr = get_phi_zr(zr, phi_z, phi)
         phi_zs_grid = get_phi_zr(zgrid, phi_z, phi)
         deltaR = get_delta_R(tilt, zr)
@@ -284,7 +284,7 @@ def get_ml_noise_lh_gridded_with_gradient(d, freq, h_arr, ind_arr, z_arr, c_arr,
         delta_c = model_matrix@x
         delta_c = delta_c.reshape((delta_c.size))
         tmp_c_arr = c_arr + delta_c # the SSP profile for this parameter point x
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, tmp_c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, _ = get_modes(freq, h_arr, ind_arr, z_arr, tmp_c_arr, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
 
 
         num_params = x.size

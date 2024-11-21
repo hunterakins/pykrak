@@ -34,7 +34,7 @@ def get_ml_noise_lh(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_
         """
         """
         delta_c = model_matrix@x
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, _ = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
         phi_zr = get_phi_zr(zr, phi_z, phi)
         phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
         deltaR = get_delta_R(tilt, zr)
@@ -150,7 +150,7 @@ class LinearizedEnv(Env):
         cmin, cmax = self.cmin, self.cmax
         h_arr = self.h_arr
 
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
+        krs, phi, phi_z, ugs = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
         M = krs.size
         self.modes = Modes(self.freq, krs, phi, M, phi_z)
         return self.modes
@@ -252,7 +252,7 @@ class LinearizedEnv(Env):
             tmp_c_imag = get_c_imag_npm(tmp_c_arr, attn_arr_npm, omega)
             tmp_c_arr = tmp_c_arr + 1j * tmp_c_imag
             k_sq_arr = omega**2 / tmp_c_arr**2
-            krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
+            krs, phi, phi_z, ugs = get_modes(freq, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs, cmin, cmax)
             M = krs.size
             phi_zs = np.zeros((zs_arr.size, M))
             phi_zr = np.zeros((zr_arr.size, M))
@@ -274,7 +274,7 @@ def get_ml_noise_lh(d, freq, h_arr, ind_arr, z_arr, c_arr, rho_arr, attn_arr, c_
         """
         """
         delta_c = model_matrix@x
-        krs, phi, phi_z = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
+        krs, phi, phi_z, ugs = get_modes(freq, h_arr, ind_arr, z_arr, c_arr+delta_c, rho_arr, attn_arr, c_hs, rho_hs, attn_hs, cmin, cmax)
         phi_zr = get_phi_zr(zr, phi_z, phi)
         phi_zs = get_phi_zr(np.array([zs]), phi_z, phi)
         deltaR = get_delta_R(tilt, zr)

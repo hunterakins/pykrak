@@ -9,7 +9,6 @@ Author: Hunter Akins
 
 Institution: Scripps Institution of Oceanography, UC San Diego
 """
-
 import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib
@@ -43,7 +42,7 @@ def tri_diag_solve(a, e1, d1, w):
         w_new[i] = (w[i] - d1[i-1]*w_new[i-1]) / scale
     scale = (a[N-1] - d1[N-2] * e1_new[N-2])
     if scale == 0:
-        scale = 1e-20
+        scale = 1e-16
     w_new[N-1]  = (w[N-1] - d1[N-2]*w_new[N-2]) / scale
 
     x[N-1] = w_new[-1] # solution
@@ -62,12 +61,20 @@ def inverse_iter(a, e1, d1, lam):
     wprev = np.ones(a.size)
     wprev /= np.sqrt(a.size) # normalize
     diff=10
-    max_num_iter = 200
+    max_num_iter = 5
     count = 0
     while diff > 1e-3 and count < max_num_iter:
         wnext = tri_diag_solve(a-lam, e1, d1, wprev)
+        #A_mat = np.zeros((a.size, a.size))
+        #A_mat += np.diag(a-lam)
+        #A_mat += np.diag(e1, 1)
+        #A_mat += np.diag(d1, -1)
+        #print(np.abs(A_mat@wnext- wprev).max())
+        #wnext = np.linalg.solve(A_mat, wprev)
+        #print(np.abs(wnext-wnext_alt).max())
         if np.any(np.isnan(wnext)):
-            lam += 1e-8*abs(lam)
+            print('yikes!')
+            lam += 1e-10*abs(lam)
             wnext = tri_diag_solve(a-lam, e1, d1, wprev)
             if np.any(np.isnan(wnext)):
                 raise ValueError('The sparse matrix mystery strikes again...')
@@ -126,7 +133,13 @@ def normalize_phi(omega, phi, krs, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_h
         else:
             z = z_arr[ind_arr[j]:]
             rho = rho_arr[ind_arr[j]:]
-        layer_norm_sq, depth_ind = single_layer_sq_norm(om_sq, phi, h, depth_ind, rho)
+
+        rho_exp = np.zeros((z.size, 1))
+        rho_exp[:,0] = rho.copy()
+        integrand = phi[depth_ind:depth_ind+z.size,:]**2 / rho_exp / om_sq
+        layer_norm_sq = h*(np.sum(integrand, axis=0) - 0.5*(integrand[0,:]+integrand[-1,:]))
+        #layer_norm_sq, depth_ind = single_layer_sq_norm(om_sq, phi, h, depth_ind, rho)
+        depth_ind += z.size-1 # the -1 is because the last point is shared with the next layer
         norm_sq += layer_norm_sq
     """
     Now get the halfspace term

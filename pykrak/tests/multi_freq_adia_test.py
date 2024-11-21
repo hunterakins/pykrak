@@ -15,13 +15,14 @@ from pyat.pyat.readwrite import read_env, write_env, write_fieldflp, read_shd, w
 from pykrak import coupled_modes as cm
 from pykrak.linearized_model import LinearizedEnv
 from pykrak.test_helpers import get_krak_inputs
-from pykrak.adia_model import MultiFrequencyAdiabaticModel
+#from pykrak.adia_model import MultiFrequencyAdiabaticModel
+from pykrak.mf_model import MultiFrequencyModel
 from pyat.pyat import env as pyat_env
 from mpi4py import MPI
 import os
 import time
-
 from fft import fft
+
 
 def get_source_waveform(fc, samp_per_cyc, Q, num_digits):
     """
@@ -186,7 +187,7 @@ def downslope_test(num_freqs):
 
 
     # now set the model frequencies and the pulse frequencies
-    rdm = MultiFrequencyAdiabaticModel(range_list, env, world_comm, model_freqs, pulse_freqs, model_comm)
+    rdm = MultiFrequencyModel(range_list, env, world_comm, model_freqs, pulse_freqs, model_comm, 'adia')
 
     zs = np.array([25.])    
     same_grid = False
@@ -348,11 +349,7 @@ def ri_test():
     x0_list = model_comm.bcast(x0_list, root=0)
 
     # now set the model frequencies and the pulse frequencies
-    rdm = MultiFrequencyAdiabaticModel(range_list, env, world_comm, model_freqs, pulse_freqs, model_comm)
-
-
-    #
-
+    rdm = MultiFrequencyModel(range_list, env, world_comm, model_freqs, pulse_freqs, model_comm, 'adia')
 
     wg_weights = rdm.run_model(zs, zr, rs, x0_list)
     """
