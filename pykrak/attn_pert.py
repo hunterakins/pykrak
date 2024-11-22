@@ -67,7 +67,14 @@ def get_attn_conv_factor(units='npm', *args):
         if len(args) == 0:
             raise ValueError('Wavelength must be passed in if using dbplam')
         lam = args[0]
-        return 1/8.6858896 / lam
+        if np.asarray(lam).size > 1: # array
+            out = np.zeros(lam.size)
+            out[lam != 0] = 1/8.6858896 / lam[lam != 0]
+            return out
+        else:
+            if lam == 0:
+                return 0.0
+            return 1/8.6858896 / lam
     elif units == 'dbpkmhz':
         f = args[0]
         if len(args) == 0:
