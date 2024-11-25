@@ -30,6 +30,7 @@ extrap = np.zeros((Nset, M_max))
 Nv = np.array([1, 2, 4, 8, 16])
 for iset, fact in enumerate(Nv):
     N_list = [x*fact for x in N_list_base]
+    N_arr = np.array(N_list)
     z_arr = np.concatenate((np.linspace(0.0, 10.0, N_list[0]), np.linspace(10.0, 20.0, N_list[1]), np.linspace(20.0, 25.0, N_list[2])))
     ind_arr = np.array([0, N_list[0], N_list[0] + N_list[1]])
     h_arr = np.array([z_arr[ind_arr[x] + 1] - z_arr[ind_arr[x]] for x in range(len(N_list))])
@@ -75,7 +76,7 @@ for iset, fact in enumerate(Nv):
 
     print('iset', iset)
     args = (omega2, ev_mat, iset,
-             h_arr, ind_arr, z_arr, 
+             h_arr, ind_arr, z_arr, N_arr,
              cp_top, cs_top, rho_top, 
              cp_bott, cs_bott, rho_bott, 
              b1, b1c, b2, b3, b4, rho_arr, 

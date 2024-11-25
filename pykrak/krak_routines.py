@@ -12,7 +12,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from numba import njit
 
-@njit
+#njit
 def initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, c_low, c_high):
     """
     Initializes arrays defining difference equations.
@@ -117,7 +117,7 @@ def initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, c
 
     return b1, b1c, b2, b3, b4, rho_arr, c_low, c_high, elastic_flag, first_acoustic, last_acoustic
 
-@njit
+#njit
 def get_f_g(cp, cs, rho, x, omega2, mode_count):
     if rho == 0.0: # Vacuum
         f = 1.0
@@ -154,7 +154,7 @@ def get_f_g(cp, cs, rho, x, omega2, mode_count):
             yV = np.array([1e10, 1e10, 1e10, 1e10, 1e10])
     return f, g, yV
 
-@njit
+#njit
 def elastic_up(x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR, iPowerF):
     """
     Propagates up through a single elastic layer using compound matrix formulation.
@@ -227,7 +227,7 @@ def elastic_up(x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR, 
 
     return yV, iPower
 
-@njit
+#njit
 def elastic_down(x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR, iPowerF):
     """
     Propagates down through a single elastic layer using compound matrix formulation.
@@ -300,7 +300,7 @@ def elastic_down(x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR
 
     return yV, iPower
 
-@njit
+#njit
 def get_bc_impedance(x, omega2, top_flag, cp, cs, rho,
                         h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr,
                         first_acoustic, last_acoustic,
@@ -349,7 +349,7 @@ def get_bc_impedance(x, omega2, top_flag, cp, cs, rho,
             g = Yv[1]
     return f, g, iPower, mode_count
 
-@njit
+#njit
 def acoustic_layers(x, f, g, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, 
                     CountModes, mode_count, first_acoustic, last_acoustic):
     """
@@ -404,9 +404,9 @@ def acoustic_layers(x, f, g, iPower, ind_arr, h_arr, z_arr, b1, rho_arr,
         rhoMedium = rho_arr[ind_arr[Medium]]  # Density at the top of the layer
         f = -(p2 - p0) / (2.0 * hMedium * rhoMedium)
         g = -p1
-    return f, g, iPower
+    return f, g, iPower, mode_count
 
-@njit
+#njit
 def funct(x, args):
     """
     funct(x) = 0 is the dispersion relation
@@ -421,7 +421,7 @@ def funct(x, args):
 
     """
     omega2, ev_mat, iset, \
-    h_arr, ind_arr, z_arr, \
+    h_arr, ind_arr, z_arr, N_arr, \
     cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, \
     b1, b1c, b2, b3, b4, rho_arr,  c_low, c_high,\
     elastic_flag, first_acoustic, last_acoustic, mode, CountModes, mode_count = args
@@ -438,8 +438,7 @@ def funct(x, args):
                                         h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
                                         first_acoustic, last_acoustic, mode_count)
 
-
-    f, g, iPower = acoustic_layers(x, f_bott, g_bott, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, 
+    f, g, iPower, mode_count = acoustic_layers(x, f_bott, g_bott, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, 
                                     CountModes, mode_count, first_acoustic, last_acoustic)
     #print('eig x, f, g, iPower after AcousticLayers = ', x, f, g, iPower)
     f_top, g_top, iPower_top, mode_count = get_bc_impedance(x, omega2, True, cp_top, cs_top, rho_top, 
@@ -478,11 +477,14 @@ def bisection(x_min, x_max, M, args):
     max_bisections = 50
 
     # Initialize boundaries
-    x_l = x_min*np.ones(M+1)
-    x_r = x_max*np.ones(M+1)
+    x_l = x_min*np.ones(M)
+    x_r = x_max*np.ones(M)
 
     # Compute the initial number of modes at x_max
-    delta, i_power, mode_count = funct(x_max, args)
+    count_modes = True
+    mode_count = 0
+    margs = args + (1, count_modes, 0)
+    delta, i_power, mode_count = funct(x_max, margs)
     n_zeros_initial = mode_count
 
     if M == 1:
@@ -490,26 +492,28 @@ def bisection(x_min, x_max, M, args):
 
     # Loop over eigenvalues to refine intervals
     for mode in range(1, M):
-        if x_l[mode] == x_min:
-            x2 = x_r[mode]
-            x1 = max(np.max(x_l[mode + 1:]), x_min)
+        mind = mode-1
+        if x_l[mind] == x_min:
+            x2 = x_r[mind]
+            x1 = max(np.max(x_l[mind+1:M]), x_min)
 
             for _ in range(max_bisections):
                 x = x1 + (x2 - x1) / 2
-                delta, i_power = mode_count_func(x)
-                n_zeros = mode_count_func(x) - n_zeros_initial
+                margs = args + (mode, True, 0)
+                delta, i_power, mcount = funct(x, margs)
+                n_zeros = mcount - n_zeros_initial
 
-                if n_zeros < mode:
+                if n_zeros < mode: # new right bdry
                     x2 = x
-                    x_r[mode] = x
-                else:
+                    x_r[mind] = x
+                else: # new left bdry
                     x1 = x
-                    if x_r[n_zeros + 1] >= x:
-                        x_r[n_zeros + 1] = x
-                    if x_l[n_zeros] <= x:
-                        x_l[n_zeros] = x
+                    if x_r[n_zeros] >= x:
+                        x_r[n_zeros] = x
+                    if x_l[n_zeros-1] <= x:
+                        x_l[n_zeros-1] = x
 
-                if x_l[mode] != x_min:
+                if x_l[mode-1] != x_min:
                     break
 
     return x_l, x_r
@@ -552,7 +556,7 @@ def solve1(args, h_v):
     """
 
     omega2, ev_mat, iset, \
-    h_arr, ind_arr, z_arr, \
+    h_arr, ind_arr, z_arr, N_arr, \
     cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, \
     b1, b1c, b2, b3, b4, rho_arr,  c_low, c_high,\
     elastic_flag, first_acoustic, last_acoustic = args
@@ -560,74 +564,46 @@ def solve1(args, h_v):
     # Initialization
     # Determine the number of modes
     x_min = 1.00001 * omega2 / c_high ** 2
-    m = 0
+
     count_modes = True
     margs = args + (1, count_modes, 0)
-    delta, i_power, m = funct(x_min)
-    print("Number of modes = {m}")
-
-    # Allocate memory for xL and xR
-    x_l = np.zeros(m + 1)
-    x_r = np.zeros(m + 1)
-
-    # Allocate memory for eigenvalue matrix if needed
-    if i_set == 1:
-        n_sets = evmat.shape[0] if evmat is not None else 0
-        if evmat is not None:
-            evmat = None
-            extrap = None
-            k = None
-            vg = None
-        evmat = np.zeros((n_sets, m))
-        extrap = np.zeros((n_sets, m))
-        k = np.zeros(m)
-        vg = np.zeros(m)
+    delta, i_power, mode_count = funct(x_min, margs)
+    m = mode_count
 
     # Check upper bound
     x_max = omega2 / c_low ** 2
-    delta, i_power = mode_count_func(x_max)
-    m -= mode_count_func(x_max)
+    delta, i_power, mode_count = funct(x_max, margs)
+    m -= mode_count
+
 
     if m == 0:
-        l_record_length = 32
-        nz_tab = 0
-
-        if ifreq == 1 and iprof == 1:
-            with open(f"{file_root}.mod", "wb") as mod_file:
-                mod_file.write(np.array([l_record_length, title, nfreq, 1, nz_tab, nz_tab], dtype='int32').tobytes())
-                mod_file.write(np.array([m], dtype='int32').tobytes())
-
-        erro_out_func("KRAKEN", "No modes for given phase speed interval")
         return
 
-    n_total = np.sum(n[first_acoustic:last_acoustic + 1])
+    n_total =N_arr[first_acoustic:last_acoustic+1].sum()
     if m > n_total / 5:
-        print(f"Approximate number of modes = {m}", file=prt_file)
-        print("Warning in KRAKEN - Solve1 : Mesh too coarse to sample the modes adequately", file=prt_file)
+        print(f"Approximate number of modes = {m}")
+        print("Warning in KRAKEN - Solve1 : Mesh too coarse to sample the modes adequately")
 
     # Initialize bounds for eigenvalue refinement
-    bisection_func(x_min, x_max, x_l, x_r)
+    x_l, x_r = bisection(x_min, x_max, m, args)
 
     # Refine each eigenvalue
     count_modes = False
-
+    print('m', m)
     for mode in range(1, m + 1):
-        x1 = x_l[mode]
-        x2 = x_r[mode]
+        x1 = x_l[mode-1]
+        x2 = x_r[mode-1]
         eps = abs(x2) * 10.0 ** (2.0 - np.finfo(float).precision)
 
-        x, error_message = zbrentx_func(x1, x2, eps)
+        margs = args + (mode, False, 0)
+        x = zbrent(x1, x2, eps, margs)
 
-        if error_message:
-            print(f"ISet, mode = {i_set}, {mode}", file=prt_file)
-            print(f"Warning in KRAKEN-ZBRENTX : {error_message}", file=prt_file)
 
-        evmat[i_set, mode - 1] = x
+        ev_mat[iset, mode-1] = x
+    ev_mat = ev_mat[:, :m].copy()
+    return ev_mat, m
 
-    # Clean up
-    del x_l, x_r
-
-@njit
+#njit
 def solve2(args, h_v, M):
     """
     h_v is array of mesh sizes
@@ -637,7 +613,7 @@ def solve2(args, h_v, M):
     
 
     omega2, ev_mat, iset, \
-    h_arr, ind_arr, z_arr, \
+    h_arr, ind_arr, z_arr, N_arr, \
     cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, \
     b1, b1c, b2, b3, b4, rho_arr,  c_low, c_high,\
     elastic_flag, first_acoustic, last_acoustic = args
@@ -690,7 +666,7 @@ def solve2(args, h_v, M):
             break
     return ev_mat, mode
 
-@njit
+#njit
 def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
     """
     Secant method for finding roots of a real-valued function.
@@ -734,7 +710,7 @@ def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
 
     return x2, max_iterations, "Failure to converge in RootFinderSecant"
 
-@njit
+#njit
 def root_finder_secant_complex(x2, tolerance, max_iterations, func, args):
     """
     Secant method for finding roots of a complex-valued function.
@@ -778,3 +754,262 @@ def root_finder_secant_complex(x2, tolerance, max_iterations, func, args):
 
     return x2, max_iterations, "Failure to converge in RootFinderSecant"
 
+def zbrent(a, b, t, args):
+    """
+      Licensing:
+    
+        This code is distributed under the GNU LGPL license.
+    
+      Modified:
+    
+        08 April 2023
+    
+      Author:
+    
+        Original FORTRAN77 version by Richard Brent
+        Python version by John Burkardt
+        Numba-ized version specific for the layered S-L problem by Hunter Akins
+    """
+    machep=1e-16
+
+    sa = a
+    sb = b
+    fa, _, _ = funct(sa, args)
+    fb, _, _ = funct(sb, args)
+
+    c = sa
+    fc = fa
+    e = sb - sa
+    d = e
+
+    while ( True ):
+
+        if ( abs ( fc ) < abs ( fb ) ):
+
+            sa = sb
+            sb = c
+            c = sa
+            fa = fb
+            fb = fc
+            fc = fa
+
+        tol = 2.0 * machep * abs ( sb ) + t
+        m = 0.5 * ( c - sb )
+
+        if ( abs ( m ) <= tol or fb == 0.0 ):
+            break
+
+        if ( abs ( e ) < tol or abs ( fa ) <= abs ( fb ) ):
+
+            e = m
+            d = e
+
+        else:
+
+            s = fb / fa
+
+            if ( sa == c ):
+
+                p = 2.0 * m * s
+                q = 1.0 - s
+
+            else:
+
+                q = fa / fc
+                r = fb / fc
+                p = s * ( 2.0 * m * q * ( q - r ) - ( sb - sa ) * ( r - 1.0 ) )
+                q = ( q - 1.0 ) * ( r - 1.0 ) * ( s - 1.0 )
+
+            if ( 0.0 < p ):
+                q = - q
+
+            else:
+                p = - p
+
+            s = e
+            e = d
+
+            if ( 2.0 * p < 3.0 * m * q - abs ( tol * q ) and p < abs ( 0.5 * s * q ) ):
+                d = p / q
+            else:
+                e = m
+                d = e
+
+        sa = sb
+        fa = fb
+
+        if ( tol < abs ( d ) ):
+            sb = sb + d
+        elif ( 0.0 < m ):
+            sb = sb + tol
+        else:
+            sb = sb - tol
+
+        fb, _, _ = funct( sb, args )
+
+        if ( ( 0.0 < fb and 0.0 < fc ) or ( fb <= 0.0 and fc <= 0.0 ) ):
+            c = sa
+            fc = fa
+            e = sb - sa
+            d = e
+
+    value = sb
+    return value
+
+def mesh_list_inputs(z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, Ng_arr):
+    num_layers = len(z_list)
+    h_list = []
+    for i in range(num_layers):
+        z_arr_i = np.linspace(z_list[i][0], z_list[i][-1], Ng_arr[i])
+        cp_arr_i = np.interp(z_arr_i, z_list[i], cp_list[i])
+        cs_arr_i = np.interp(z_arr_i, z_list[i], cs_list[i])
+        rho_arr_i = np.interp(z_arr_i, z_list[i], rho_list[i])
+        attnp_arr_i = np.interp(z_arr_i, z_list[i], attnp_list[i])
+        attns_arr_i = np.interp(z_arr_i, z_list[i], attns_list[i])
+        h_list.append(z_arr_i[1] - z_arr_i[0])
+
+
+        if i == 0:
+            ind_list = [0]
+            z_arr = z_arr_i.copy()
+            cp_arr = cp_arr_i.copy()
+            cs_arr = cs_arr_i.copy()
+            rho_arr = rho_arr_i.copy()
+            attnp_arr = attnp_arr_i.copy()
+            attns_arr = attns_arr_i.copy()
+
+        else:
+            ind_list.append(z_arr.size)
+            z_arr = np.concatenate((z_arr, z_arr_i))
+            cp_arr = np.concatenate((cp_arr, cp_arr_i))
+            cs_arr = np.concatenate((cs_arr, cs_arr_i))
+            rho_arr = np.concatenate((rho_arr, rho_arr_i))
+            attnp_arr = np.concatenate((attnp_arr, attnp_arr_i))
+            attns_arr = np.concatenate((attns_arr, attns_arr_i))
+
+    # Now convert speeds to complex
+    if np.any(attnp_arr > 0):
+        cp_imag_arr = ap.get_c_imag(cp_arr, attnp_arr, attn_units, omega)
+        cp_arr = cp_arr + 1j*cp_imag_arr
+    if np.any(attns_arr > 0):
+        cs_imag_arr = ap.get_c_imag(cs_arr, attns_arr, attn_units, omega)
+        cs_arr = cs_arr + 1j*cs_imag_arr
+
+    ind_arr = np.array(ind_list, dtype=np.int32)
+    h_arr = np.array(h_list)
+    return h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr
+
+def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, cp_bott, cs_bott, rho_bott, attnp_bott, attns_bott, attn_units, Ng_list, rmax, c_low, c_high):
+    """
+    Take the environment specified as a list of arrays (each list item is a layer)
+    and solve for the eigenvalues and eigenvectors eventually
+
+    Currently only does c-linear interpolation
+
+    Ng_list is number of mesh points as alist over layers
+    """
+    # First get a mesh
+    omega = 2*np.pi*freq
+    omega2 = (2*np.pi*freq)**2
+    num_layers= len(z_list)
+    if len(Ng_list) == 0: # no mesh specified
+        c = cp_list[-1][-1] # arbitrary value, selected to agree with KRAKEN
+        if cs_list[-1][-1]  > c:
+            c = cs_list[-1][-1]
+        lam = c / freq
+        dz_approx = lam / 20
+        for i in range(num_layers):
+            Nneeded = int((z_list[i][-1] - z_list[i][0]) / dz_approx)
+            Nneeded = max(Nneeded, 10)
+            Ng_list.append(Nneeded)
+
+    Ng_arr0 = np.array(Ng_list, dtype=np.int32)
+
+    if attnp_top > 0:
+        cp_top_imag = ap.get_c_imag(cp_top, attnp_top, attn_units, omega)
+        cp_top = cp_top + 1j*cp_top_imag
+
+    if attns_top > 0:
+        cs_top_imag = ap.get_c_imag(cs_top, attns_top, attn_units, omega)
+        cs_top = cs_top + 1j*cs_top_imag
+
+    if attnp_bott > 0:
+        cp_bott_imag = ap.get_c_imag(cp_bott, attnp_bott, attn_units, omega)
+        cp_bott = cp_bott + 1j*cp_bott_imag
+
+    if attns_bott > 0:
+        cs_bott_imag = ap.get_c_imag(cs_bott, attns_bott, attn_units, omega)
+        cs_bott = cs_bott + 1j*cs_bott_imag
+
+
+
+    
+   
+    
+    M_max = 5000
+    Nv = np.array([1,2,4,8,16]) # mesh refinement factors
+    Nset = len(Nv)
+    ev_mat = np.zeros((Nset, M_max)) # real (for now)
+    extrap = np.zeros((Nset, M_max))
+
+
+
+
+    for iset in range(Nset):
+        # Refine the mesh 
+        Ng_arr_i = Ng_arr0 * Nv[iset]
+        h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr = mesh_list_inputs(z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, Ng_arr_i)
+
+
+        b1, b1c, b2, b3, b4, rho_arr, \
+                c_low, c_high, \
+                elastic_flag, first_acoustic, last_acoustic = initialize(h_arr, ind_arr, z_arr, \
+                                                                        omega2, cp_arr, cs_arr, rho_arr, \
+                                                                        cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott,\
+                                                                        c_low, c_high)
+        
+        # pack all this info into an array
+        args = (omega2, ev_mat, iset,
+                 h_arr, ind_arr, z_arr, Ng_arr_i, 
+                 cp_top, cs_top, rho_top, 
+                 cp_bott, cs_bott, rho_bott, 
+                 b1, b1c, b2, b3, b4, rho_arr, 
+                 c_low, c_high, elastic_flag, first_acoustic, last_acoustic)
+
+        if iset == 0:
+            h_v = np.array([h_arr[0]])
+        else:
+            h_v = np.append(h_v, h_arr[0])
+
+        ev_mat, M = solve1(args, h_v)
+        print('iset, M', iset, M)
+
+        if iset <= 1 and (last_acoustic - first_acoustic + 1 == num_layers):
+            ev_mat, M = solve1(args, h_v)
+        else: # solve2
+            ev_mat, M = solve2(args, h_v, M)
+
+
+        """
+        Do Richardson extrapolation on ev_mat
+        """
+        extrap[iset,:M] = ev_mat[iset,:].copy()
+        KEY   = int(2 * M / 3)   # index of element used to check convergence
+        if iset > 0:
+            T1 = extrap[0, KEY]
+            for j in range(iset-1, -1, -1):
+                for m in range(M):
+                    x1 = Nv[j]**2
+                    x2 = Nv[iset]**2
+                    F1 = extrap[j,m]
+                    F2 = extrap[j+1,m]
+                    extrap[j, m] = F2 - (F1 - F2) / (x2 / x1 - 1.0)
+
+            T2 = extrap[0, KEY]
+            error = np.abs(T2 - T1)
+            print('Error', error)
+            if error*rmax < 1.0:
+                break
+
+    krs = np.sqrt(extrap[0,:M])
+    return krs
