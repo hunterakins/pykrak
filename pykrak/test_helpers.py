@@ -31,6 +31,7 @@ def read_krs_from_prt_file(prt_file,verbose=True):
             if line[0] == 'I':
                 if verbose:
                     print(i)
+                i += 1
                 break
             i += 1
         i += 1 # now i is the first mode one
