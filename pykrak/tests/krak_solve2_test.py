@@ -21,10 +21,11 @@ import sys
 N_list_base = [801, 801, 4001]
 Nset = 5
 M_max = 5000
-freq = 200.0
+freq = 100.0
 omega2 = (2*np.pi*freq)**2
 print('omega2', omega2)
 ev_mat = np.zeros((Nset, M_max))
+print(ev_mat.flags)
 extrap = np.zeros((Nset, M_max))
 Nv = np.array([1, 2, 4, 8, 16])
 for iset, fact in enumerate(Nv):
@@ -67,11 +68,12 @@ for iset, fact in enumerate(Nv):
 
     b1, b1c, b2, b3, b4, rho_arr, c_low, c_high, elastic_flag, first_acoustic, last_acoustic =kr.initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, c_low, c_high)
     print('b1 .size', b1.size)
-    #print('c_low', c_low, 'c_high', c_high)
+    print('c_low', c_low, 'c_high', c_high)
     #for i in range(b1.size):
     #    print('i, z, b1', i , z_arr[i], b1[i])
 
 
+    print('iset', iset)
     args = (omega2, ev_mat, iset,
              h_arr, ind_arr, z_arr, 
              cp_top, cs_top, rho_top, 
@@ -81,12 +83,18 @@ for iset, fact in enumerate(Nv):
 
     if iset == 0:
         h_v = np.array([h_arr[0]])
+        M = M_max
     else:
         h_v = np.append(h_v, h_arr[0])
         print('h_v' ,h_v)
 
-    ev_mat = kr.solve2(args, h_v)
+    print('ev mat shap', ev_mat.shape)
+    ev_mat, M = kr.solve2(args, h_v, M)
+    print('ev mat shap', ev_mat.shape)
+    print('M', M)
+    print('iset', iset)
     ev_i = ev_mat[iset,:]
+    print('ev_i', ev_i)
     Mi = np.sum(ev_i > 0)
     inds = np.arange(0, Mi)
     print('iter i', np.sqrt(ev_i[:Mi]))
@@ -96,7 +104,7 @@ for iset, fact in enumerate(Nv):
     """
     Do Richardson extrapolation on ev_mat
     """
-    extrap[iset,:Mi] = ev_i[:Mi]
+    extrap[iset,:Mi] = ev_i[:Mi].copy()
     KEY   = int(2 * Mi / 3)   # index of element used to check convergence
     if iset > 0:
         T1 = extrap[0, KEY]
@@ -117,4 +125,4 @@ for i in range(Mi):
     print('i: {} kr: {}'.format(i, np.sqrt(extrap[0,i])))
 
 
-#plt.show()
+plt.show()

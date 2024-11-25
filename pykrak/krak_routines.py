@@ -441,7 +441,7 @@ def funct(x, args):
 
     f, g, iPower = acoustic_layers(x, f_bott, g_bott, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, 
                                     CountModes, mode_count, first_acoustic, last_acoustic)
-    print('eig x, f, g, iPower after AcousticLayers = ', x, f, g, iPower)
+    #print('eig x, f, g, iPower after AcousticLayers = ', x, f, g, iPower)
     f_top, g_top, iPower_top, mode_count = get_bc_impedance(x, omega2, True, cp_top, cs_top, rho_top, 
                                         h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
                                         first_acoustic, last_acoustic, mode_count)
@@ -628,7 +628,7 @@ def solve1(args, h_v):
     del x_l, x_r
 
 @njit
-def solve2(args, h_v):
+def solve2(args, h_v, M):
     """
     h_v is array of mesh sizes
     """
@@ -644,21 +644,18 @@ def solve2(args, h_v):
     CountModes=False
     mode_count = 0 # doesn't matter
 
-    M_max = ev_mat.shape[1]
-
 
     # inital guess
     x = omega2 / c_low**2
-    print('x0', x)
 
-    for mode in range(1, M_max+1):
+    for mode in range(1, M+1):
         # Initial guess for x
         imode = mode-1
         x *= 1.00001
         
         # use extrapolation to produce initial guess if possible
         if iset >= 1:
-            p = ev_mat[:iset, imode] # load previous mesh estimates
+            p = ev_mat[:iset, imode].copy() # load previous mesh estimates
 
             if iset >= 2: # extrapolation
                 for ii in range(iset-1):
@@ -673,19 +670,13 @@ def solve2(args, h_v):
                 x = p[0]
 
         # Calculate tolerance for root finder
-        print('b1 size', b1.size)
         #tolerance = np.abs(x) * b1.size * 10.0**(1.0 - 15) # 15 is precision for float 64
         tolerance = np.abs(x) * b1.size * 10.0**(1.0 - np.finfo(np.float64).precision)
 
 
         # Use secant method to refine eigenvalue
         margs = args + (mode, CountModes, mode_count)
-
-        print('tolerance', tolerance)
-        print('x', x)
-        
         x, iteration, error_message = root_finder_secant_real(x, tolerance, max_iteration, funct, margs)
-
         if error_message != '':
             print(f"Warning in Solve2 - RootFinderSecant: {error_message}")
             print(f"iset, mode = {iset}, {mode}")
@@ -695,10 +686,9 @@ def solve2(args, h_v):
 
         # Discard modes outside user-specified spectrum
         if omega2 / c_high**2 > x:
-            ev_mat = ev_mat[:, :imode]
+            ev_mat = ev_mat[:, :mode].copy()
             break
-
-    return ev_mat
+    return ev_mat, mode
 
 @njit
 def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
