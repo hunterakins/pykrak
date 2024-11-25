@@ -13,7 +13,7 @@ Institution: Scripps Institution of Oceanography, UC San Diego
 
 import numpy as np
 from matplotlib import pyplot as plt
-from pykrak import mesh_routines as mr
+from pykrak import krak_routines as kr
 from pykrak import attn_pert as ap
 import sys
 
@@ -56,29 +56,15 @@ attn_units = 'dbplam'
 #cp_bott = cp_bott + 1j*cp_bott_imag
 #cs_bott = cs_bott + 1j*cs_bot_imag
 
-b1, b1c, b2, b3, b4, rho_arr, c_low, c_high, elastic_flag, first_acoustic, last_acoustic =mr.initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, c_low, c_high)
+b1, b1c, b2, b3, b4, rho_arr, c_low, c_high, elastic_flag, first_acoustic, last_acoustic =kr.initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, c_low, c_high)
 
 x = 45.320065860122355
-
-fbott, gbott, iPower = mr.get_bc_impedance(x, omega2, False, cp_bott, cs_bott, rho_bott, 
+modeCount = 0
+fbott, gbott, iPower,_ = kr.get_bc_impedance(x, omega2, False, cp_bott, cs_bott, rho_bott, 
                                 h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
-                                first_acoustic, last_acoustic)
+                                first_acoustic, last_acoustic, modeCount)
 
 CountModes = True
 modeCount = 0
-f,g, iPower = mr.acoustic_layers(x, fbott, gbott, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, CountModes, modeCount, first_acoustic, last_acoustic)
+f,g, iPower = kr.acoustic_layers(x, fbott, gbott, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, CountModes, modeCount, first_acoustic, last_acoustic)
 print('f, g', f, g)
-sys.exit()
-ftop, gtop = mr.get_bc_impedance(x, omega2, True, cp_top, cs_top, rho_top, 
-                                h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
-                                first_acoustic, last_acoustic)
-print('ftop, gtop')
-print(ftop, gtop)
-print('fbott, gbott')
-print(fbott, gbott)
-
-print('c_low = ', c_low)
-print('c_high = ', c_high)
-for i in range(b1.size):
-    print('i b1 b1c', i, b1[i], b1c[i])
-
