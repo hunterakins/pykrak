@@ -69,24 +69,32 @@ def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
     N_list = ssp.N
     z_list = [np.array(x.z) for x in ssp.raw]
     c_list = [np.array(x.alphaR) for x in ssp.raw]
+    cs_list = [np.array(x.betaR) for x in ssp.raw]
     rho_list = [np.array(x.rho) for x in ssp.raw]
     attn_list = [np.array(x.alphaI) for x in ssp.raw]
+    attns_list = [np.array(x.betaI) for x in ssp.raw]
     #attn_list = [2*np.pi*freq *x / y**2 for x,y in zip(cI_list, c_list)]
     # this is npm ...so need to reverse convert?
     bot_bdry = bdry.Bot
     opt = bot_bdry.Opt
     hs = bot_bdry.hs
     # I don't handle shear
-    c_hs = hs.alphaR
-    if hs.betaR != 0:
-        print('Warning. Ignoring halfspace shear')
-    rho_hs = hs.rho
-    c_hs = float(c_hs)
-    rho_hs = float(rho_hs)
-    #cI_hs = hs.alphaI
-    #attn_hs = 2*np.pi*freq * cI_hs / c_hs**2
-    attn_hs = hs.alphaI
-    print('attn_hs', attn_hs)
+    if opt[0] == 'A':
+        c_hs = hs.alphaR
+        rho_hs = hs.rho
+        c_hs = float(c_hs)
+        cs_hs = float(hs.betaR)
+        rho_hs = float(rho_hs)
+        attn_hs = hs.alphaI
+        attns_hs = hs.betaI
+    elif opt[0] == 'R':
+        rho_hs = 1e10
+        c_hs = 000.0
+        attn_hs = 000.0
+        cs_hs = 0.0
+        attns_hs = 0.0
+
+
     top_opt = bdry.Top.Opt
     top_opt = top_opt.strip()
     atten_opt = top_opt[2]
@@ -97,7 +105,7 @@ def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
     env= Env(z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs, attn_units)
     env.add_freq(freq)
     N_list = [x+1 for x in N_list] # kraken doesn't count end points?
-    return env, N_list
+    return env, N_list, z_list, c_list, cs_list, rho_list, attn_list, attns_list, c_hs, cs_hs, rho_hs, attn_hs, attns_hs, pos, beam, cint, RMax
 
 def get_krak_inputs(env, twod=False):
     """

@@ -21,7 +21,7 @@ import sys
 N_list_base = [801, 801, 4001]
 Nset = 5
 M_max = 5000
-freq = 100.0
+freq = 200.0
 omega2 = (2*np.pi*freq)**2
 print('omega2', omega2)
 ev_mat = np.zeros((Nset, M_max))
@@ -34,6 +34,7 @@ for iset, fact in enumerate(Nv):
     z_arr = np.concatenate((np.linspace(0.0, 10.0, N_list[0]), np.linspace(10.0, 20.0, N_list[1]), np.linspace(20.0, 25.0, N_list[2])))
     ind_arr = np.array([0, N_list[0], N_list[0] + N_list[1]])
     h_arr = np.array([z_arr[ind_arr[x] + 1] - z_arr[ind_arr[x]] for x in range(len(N_list))])
+    print(h_arr, ind_arr)
     cp_arr = np.concatenate((1500.0 * np.ones(N_list[0]), 1550.0 * np.ones(N_list[1]), 1600.0 * np.ones(N_list[2])))
     cs_arr = np.concatenate((0.0 * np.ones(N_list[0]), 0.0 * np.ones(N_list[1]), 300.0 * np.ones(N_list[2])))
     rho_arr = np.concatenate((1.0 * np.ones(N_list[0]), 1.2 * np.ones(N_list[1]), 1.5 * np.ones(N_list[2])))

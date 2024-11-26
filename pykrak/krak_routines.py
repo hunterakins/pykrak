@@ -11,8 +11,9 @@ Institution: Scripps Institution of Oceanography, UC San Diego
 import numpy as np
 from matplotlib import pyplot as plt
 from numba import njit
+from pykrak import attn_pert as ap
 
-#njit
+@njit
 def initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, c_low, c_high):
     """
     Initializes arrays defining difference equations.
@@ -52,7 +53,7 @@ def initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, c
 
     # Allocate arrays
     b1 = np.zeros(n_points, dtype=np.float64)
-    b1c = np.zeros(n_points, dtype=np.complex128)
+    b1c = np.zeros(n_points, dtype=np.float64)
     b2 = np.zeros(n_points, dtype=np.float64)
     b3 = np.zeros(n_points, dtype=np.float64)
     b4 = np.zeros(n_points, dtype=np.float64)
@@ -73,7 +74,7 @@ def initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, c
                 first_acoustic = medium
             last_acoustic= medium
             b1[ii:ii + Nii] = -2.0 + h_arr[medium]**2 * np.real(omega2 / (cp_arr[ii:ii + Nii])**2)
-            b1c[ii:ii + Nii] = 1j * np.imag(omega2 / (cp_arr[ii:ii + Nii])**2)
+            b1c[ii:ii + Nii] = np.imag(omega2 / (cp_arr[ii:ii + Nii])**2)
 
         else:  # Elastic medium
             elastic_flag = True
@@ -117,8 +118,8 @@ def initialize(h_arr, ind_arr, z_arr, omega2, cp_arr, cs_arr, rho_arr, cp_top, c
 
     return b1, b1c, b2, b3, b4, rho_arr, c_low, c_high, elastic_flag, first_acoustic, last_acoustic
 
-#njit
-def get_f_g(cp, cs, rho, x, omega2, mode_count):
+@njit
+def get_f_g(cp, cs, rho, x, omega2, mode_count, complex_flag):
     if rho == 0.0: # Vacuum
         f = 1.0
         g = 0.0
@@ -151,10 +152,13 @@ def get_f_g(cp, cs, rho, x, omega2, mode_count):
             gammap = np.sqrt(x - omega2 / cp**2)
             f = gammap
             g = rho
+            if not complex_flag:
+                f = np.real(f)
+                g = np.real(g)
             yV = np.array([1e10, 1e10, 1e10, 1e10, 1e10])
     return f, g, yV
 
-#njit
+@njit
 def elastic_up(x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR, iPowerF):
     """
     Propagates up through a single elastic layer using compound matrix formulation.
@@ -227,7 +231,7 @@ def elastic_up(x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR, 
 
     return yV, iPower
 
-#njit
+@njit
 def elastic_down(x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR, iPowerF):
     """
     Propagates down through a single elastic layer using compound matrix formulation.
@@ -300,11 +304,11 @@ def elastic_down(x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR
 
     return yV, iPower
 
-#njit
+@njit
 def get_bc_impedance(x, omega2, top_flag, cp, cs, rho,
                         h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr,
                         first_acoustic, last_acoustic,
-                        mode_count):
+                        mode_count, complex_flag):
     """
     Compute the impedance functions for the top and bottom halfspaces
     top_flag - True if the top boundary
@@ -315,7 +319,7 @@ def get_bc_impedance(x, omega2, top_flag, cp, cs, rho,
     iPowerR = 50
     iPowerF = -50
 
-    f, g, Yv = get_f_g(cp, cs, rho, x, omega2, mode_count)
+    f, g, Yv = get_f_g(cp, cs, rho, x, omega2, mode_count, complex_flag)
     if top_flag:
         g = -g 
 
@@ -347,9 +351,13 @@ def get_bc_impedance(x, omega2, top_flag, cp, cs, rho,
                                                 rho_arr[i0:i1], Floor, Roof, iPowerR, iPowerF)
             f = omega2 * Yv[3]
             g = Yv[1]
+
+    if not complex_flag:
+        f = np.real(f)
+        g = np.real(g)
     return f, g, iPower, mode_count
 
-#njit
+@njit
 def acoustic_layers(x, f, g, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, 
                     CountModes, mode_count, first_acoustic, last_acoustic):
     """
@@ -363,6 +371,7 @@ def acoustic_layers(x, f, g, iPower, ind_arr, h_arr, z_arr, b1, rho_arr,
 
     """
 
+
     # Parameters
     iPowerF = -50
     Roof = 1.0e50
@@ -371,6 +380,7 @@ def acoustic_layers(x, f, g, iPower, ind_arr, h_arr, z_arr, b1, rho_arr,
     # Loop over successive acoustic media starting at the end and going up
     for Medium in range(last_acoustic, first_acoustic-1, -1):
         hMedium = h_arr[Medium]
+        #print('hMedium', hMedium)
         if Medium == ind_arr.size - 1:
             z_layer = z_arr[ind_arr[Medium]:]
         else:
@@ -383,6 +393,7 @@ def acoustic_layers(x, f, g, iPower, ind_arr, h_arr, z_arr, b1, rho_arr,
 
         p1 = -2.0 * g
         p2 = (b1[ii] - h2k2) * g - 2.0 * hMedium * f * rhoMedium
+
 
         # Shoot (towards surface) through a single medium
         for ii in range(ind_arr[Medium] + NMedium-1, ind_arr[Medium], -1):
@@ -406,7 +417,7 @@ def acoustic_layers(x, f, g, iPower, ind_arr, h_arr, z_arr, b1, rho_arr,
         g = -p1
     return f, g, iPower, mode_count
 
-#njit
+@njit
 def funct(x, args):
     """
     funct(x) = 0 is the dispersion relation
@@ -436,19 +447,22 @@ def funct(x, args):
     # shoot up from the bottom
     f_bott, g_bott, iPower, mode_count = get_bc_impedance(x, omega2, False, cp_bott, cs_bott, rho_bott, 
                                         h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
-                                        first_acoustic, last_acoustic, mode_count)
-
-    f, g, iPower, mode_count = acoustic_layers(x, f_bott, g_bott, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, 
+                                        first_acoustic, last_acoustic, mode_count, False)
+    #print('x, f_bott, g_bott', x, f_bott, g_bott)
+    f, g, iPower, mode_count = acoustic_layers(x, f_bott.real, g_bott.real, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, 
                                     CountModes, mode_count, first_acoustic, last_acoustic)
+    #print('after al', f, g)
     #print('eig x, f, g, iPower after AcousticLayers = ', x, f, g, iPower)
     f_top, g_top, iPower_top, mode_count = get_bc_impedance(x, omega2, True, cp_top, cs_top, rho_top, 
                                         h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
-                                        first_acoustic, last_acoustic, mode_count)
+                                        first_acoustic, last_acoustic, mode_count, False)
+
+    #print('at top', f_top, g_top)
 
     Delta  =(f * g_top - g * f_top).real
     iPower = iPower + iPower_top
 
-    if ( g * Delta > 0.0 ): 
+    if ( g.real * Delta > 0.0 ): 
         mode_count = mode_count + 1
 
     # Deflate previous roots
@@ -469,6 +483,7 @@ def funct(x, args):
              iPower = iPower - iPowerF
     return Delta, iPower, mode_count
 
+#@njit
 def bisection(x_min, x_max, M, args):
     """
     Returns isolating intervals (xL, xR) for each eigenvalue
@@ -518,6 +533,7 @@ def bisection(x_min, x_max, M, args):
 
     return x_l, x_r
 
+#@njit
 def solve1(args, h_v):
     """
     Solve for eigenvalues using Sturm sequences and Brent's method.
@@ -593,7 +609,7 @@ def solve1(args, h_v):
     for mode in range(1, m + 1):
         x1 = x_l[mode-1]
         x2 = x_r[mode-1]
-        eps = abs(x2) * 10.0 ** (2.0 - np.finfo(float).precision)
+        eps = abs(x2) * 10.0 ** (2.0 - np.finfo(np.float64).precision)
 
         margs = args + (mode, False, 0)
         x = zbrent(x1, x2, eps, margs)
@@ -603,7 +619,7 @@ def solve1(args, h_v):
     ev_mat = ev_mat[:, :m].copy()
     return ev_mat, m
 
-#njit
+#@njit
 def solve2(args, h_v, M):
     """
     h_v is array of mesh sizes
@@ -666,7 +682,7 @@ def solve2(args, h_v, M):
             break
     return ev_mat, mode
 
-#njit
+#@njit
 def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
     """
     Secant method for finding roots of a real-valued function.
@@ -710,7 +726,7 @@ def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
 
     return x2, max_iterations, "Failure to converge in RootFinderSecant"
 
-#njit
+#@njit
 def root_finder_secant_complex(x2, tolerance, max_iterations, func, args):
     """
     Secant method for finding roots of a complex-valued function.
@@ -753,7 +769,7 @@ def root_finder_secant_complex(x2, tolerance, max_iterations, func, args):
             return x2, iteration, ""
 
     return x2, max_iterations, "Failure to converge in RootFinderSecant"
-
+#@njit
 def zbrent(a, b, t, args):
     """
       Licensing:
@@ -856,7 +872,302 @@ def zbrent(a, b, t, args):
     value = sb
     return value
 
-def mesh_list_inputs(z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, Ng_arr):
+@njit
+def inverse_iter(d, e, max_iteration=100):
+    """
+    Perform inverse iteration to compute an eigenvector.
+
+    Parameters:
+    - d (numpy.ndarray): Diagonal elements of the matrix (1D array of size N).
+    - e (numpy.ndarray): Off-diagonal elements (1D array of size N+1).
+    - max_iteration (int): Maximum number of iterations (default: 100).
+
+    Returns:
+    - eigenvector (numpy.ndarray): Approximated eigenvector (1D array of size N).
+    - i_error (int): error flag (0 if successful, -1 if convergence fails).
+    """
+    # Initialize variables
+    i_error = 0
+    N = d.size
+
+    # Compute the (infinity) norm of the matrix
+    norm = np.sum(np.abs(d)) + np.sum(np.abs(e[1:N]))
+
+    # Small thresholds
+    eps3 = 100.0 * np.finfo(np.float64).eps * norm
+    uk = N
+    eps4 = uk * eps3
+    uk = eps4 / np.sqrt(uk)
+
+    # Temporary arrays
+    rv1 = np.zeros(N)
+    rv2 = np.zeros(N)
+    rv3 = np.zeros(N)
+    rv4 = np.zeros(N)
+
+    # elimination with interchanges
+    xu = 1.0
+    u = d[0]
+    v = e[1]
+
+    for i in range(1, N):
+        if abs(e[i]) >= abs(u):
+            xu = u / e[i]
+            rv4[i] = xu
+            rv1[i - 1] = e[i]
+            rv2[i - 1] = d[i]
+            rv3[i - 1] = e[i + 1]
+            u = v - xu * rv2[i - 1]
+            v = -xu * rv3[i - 1]
+        else:
+            xu = e[i] / u
+            rv4[i] = xu
+            rv1[i - 1] = u
+            rv2[i - 1] = v
+            rv3[i - 1] = 0.0
+            u = d[i] - xu * v
+            v = e[i + 1]
+
+    if u == 0.0:
+        u = eps3
+
+    rv3[N - 2] = 0.0
+    rv1[N - 1] = u
+    rv2[N - 1] = 0.0
+    rv3[N - 1] = 0.0
+
+    # Initialize eigenvector
+    eigenvector = uk*np.ones(N)
+
+    # Main loop of inverse iteration
+    for iteration in range(max_iteration):
+
+        # Back substitution
+        for i in range(N - 1, -1, -1):
+            eigenvector[i] = (eigenvector[i] - u * rv2[i] - v * rv3[i]) / rv1[i]
+            v = u
+            u = eigenvector[i]
+
+        # Compute norm of vector and test for convergence
+        norm = np.sum(np.abs(eigenvector))
+        if norm >= 1.0:
+            return eigenvector, i_error  # Convergence achieved
+
+        # Scale the vector down
+        xu = eps4 / norm
+        eigenvector *= xu
+
+        # Forward elimination
+        for i in range(1, N):
+            u = eigenvector[i]
+
+            if rv1[i - 1] == e[i]:
+                u = eigenvector[i - 1]
+                eigenvector[i - 1] = eigenvector[i]
+
+            eigenvector[i] = u - rv4[i] * eigenvector[i - 1]
+
+    # If we fall through the loop, convergence failed
+    i_error = -1
+    return eigenvector, i_error
+
+#@njit
+def normalize(phi, iTurningPoint, x, args, z):
+    """
+    Normalize the eigenvector phi and compute perturbations from attenuation and group velocity.
+    """
+    #print('x', x)
+    omega2, ev_mat, iset, \
+    h_arr, ind_arr, z_arr, Ng_arr, \
+    cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, \
+    b1, b1c, b2, b3, b4, rho_arr,  c_low, c_high,\
+    elastic_flag, first_acoustic, last_acoustic, M = args
+    mode_count = 0
+    count_modes=False
+
+    # Initialization
+    SqNorm = 0.0
+    Perturbation_k = 0.0 + 0.0j
+    sg = 0.0
+
+    # Top half-space contribution
+    if rho_top != 0.0 and rho_top != 1e10:
+        Del = 1j * np.imag(np.sqrt((x - omega2 / cp_top**2)))
+        Perturbation_k -= Del * phi[0]**2 / rho_top
+        sg += phi[0]**2 / (2 * np.sqrt(x - np.real(omega2 / cp_top**2))) / np.real(rho_top * cp_top**2)
+
+    # Volume contribution
+    L = first_acoustic-1
+    j = 0
+
+    for Medium in range(first_acoustic, last_acoustic + 1):
+        L += 1 # L is index of first value in layer
+        rhoMedium = rho_arr[L]
+        rho_omega_h2 = rhoMedium * omega2 * h_arr[Medium]**2
+
+        # Top interface
+        SqNorm += 0.5 * h_arr[Medium] * phi[j]**2 / rhoMedium
+        sg += 0.5 * h_arr[Medium] * (b1[L] + 2.0) * phi[j]**2 / rho_omega_h2
+        Perturbation_k += 0.5 * h_arr[Medium] * 1j * b1c[L] * phi[j]**2 / rhoMedium
+
+        # Medium
+        L1 = L + 1
+        L += Ng_arr[Medium] -1
+        j1 = j+1 #
+        j += Ng_arr[Medium] -1
+
+        SqNorm += h_arr[Medium] * np.sum(phi[j1:j]**2) / rhoMedium
+        sg += h_arr[Medium] * np.sum((b1[L1:L] + 2.0) * phi[j1:j]**2) / rho_omega_h2
+        Perturbation_k += h_arr[Medium] * 1j * np.sum(b1c[L1:L] * phi[j1:j]**2) / rhoMedium
+
+        # Bottom interface
+        SqNorm += 0.5 * h_arr[Medium] * phi[j]**2 / rhoMedium
+        sg += 0.5 * h_arr[Medium] * (b1[L] + 2.0) * phi[j]**2 / rho_omega_h2
+        Perturbation_k += 0.5 * h_arr[Medium] * 1j * b1c[L] * phi[j]**2 / rhoMedium
+
+    # Bottom half-space contribution
+    if rho_bott != 0 and rho_bott != 1e10:
+        Del = 1j * np.imag(np.sqrt((x - omega2 / cp_bott**2)))
+        Perturbation_k -= Del * phi[j]**2 / rho_bott
+        sg += phi[j]**2 / (2 * np.sqrt(x - np.real(omega2 / cp_bott**2))) / (rho_bott * np.real(cp_bott)**2)
+
+    # Deriv of top admittance
+    x1 = 0.9999999*x
+    x2 = 1.0000001*x
+    f_top1, g_top1, iPower_top, mode_count = get_bc_impedance(x1, omega2, True, cp_top, cs_top, rho_top, 
+                                        h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
+                                        first_acoustic, last_acoustic, mode_count, False)
+    f_top2, g_top2, iPower_top, mode_count = get_bc_impedance(x2, omega2, True, cp_top, cs_top, rho_top,
+                                        h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr,
+                                        first_acoustic, last_acoustic, mode_count, False)
+    drho_dx = 0.0
+    if g_top1 != 0:
+        drho_dx = np.real((f_top2 / g_top2 - f_top1 / g_top1)) / (x2 - x1)
+
+    # Bott
+    f_bott1, g_bott1, iPower_bott, mode_count = get_bc_impedance(x1, omega2, False, cp_bott, cs_bott, rho_bott, 
+                                        h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
+                                        first_acoustic, last_acoustic, mode_count, False)
+    f_bott2, g_bott2, iPower_bott, mode_count = get_bc_impedance(x2, omega2, False, cp_bott, cs_bott, rho_bott,
+                                        h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr,
+                                        first_acoustic, last_acoustic, mode_count, False)
+    deta_dx = 0.0
+    if g_bott1 != 0:
+        deta_dx = np.real((f_bott2 / g_bott2 - f_bott1 / g_bott1)) / (x2 - x1)
+    rn = SqNorm - drho_dx*phi[0]**2 + deta_dx*phi[j]**2
+    if rn < 0.0:
+        rn = -rn
+
+    #print('Rn', rn)
+    scale_factor = 1/np.sqrt(rn)
+    if phi[iTurningPoint] < 0.0:
+        scale_factor = -scale_factor
+    w = phi*scale_factor
+    sg = sg * scale_factor**2 * np.sqrt(omega2) / np.sqrt(x)
+    #print('ug before', 1/(sg_before* scale_factor**2 * np.sqrt(omega2) / np.sqrt(x)))
+    #print('ug afer', 1/sg)
+    Perturbation_k = Perturbation_k * scale_factor**2
+    ug = 1.0 / sg
+    
+
+    return w, Perturbation_k, sg, ug
+
+#@njit
+def get_phi(args):
+    omega2, ev_mat, iset, \
+    h_arr, ind_arr, z_arr, Ng_arr, \
+    cp_top, cs_top, rho_top, cp_bott, cs_bott, rho_bott, \
+    b1, b1c, b2, b3, b4, rho_arr,  c_low, c_high,\
+    elastic_flag, first_acoustic, last_acoustic, M = args
+    CountModes=False
+    mode_count = 0 # doesn't matter
+
+
+
+    for Medium in range(first_acoustic, last_acoustic+1):
+        h_rho = h_arr[ Medium ] * rho_arr[ ind_arr[Medium] ]# density at the top of each layer
+        #print('h_rho', h_rho)
+        if Medium == ind_arr.size - 1:
+            z_layer = z_arr[ind_arr[Medium]:]
+        else:
+            z_layer = z_arr[ind_arr[Medium]:ind_arr[Medium+1]]
+        if Medium == first_acoustic:
+            e = 1.0 / h_rho * np.ones(z_layer.size)
+            e[0] = 0.0
+            z = z_layer
+        else:
+            e = np.concatenate((e, 1.0 / h_rho * np.ones(z_layer.size-1)))
+            z = np.concatenate((z, z_layer[1:]))  # get rid of the doubled points
+
+    e = np.append(e, 1.0 / h_rho)
+    # Main loop: for each eigenvalue call InverseIteration to get eigenvector
+    d = np.zeros(z.size)
+    phi = np.zeros((z.size, M))
+    pert_k_arr = np.zeros(M, dtype=np.complex128)
+    sgs_arr= np.zeros(M)
+    ugs_arr = np.zeros(M)
+
+    for mode in range(1, M+1):
+        mind = mode-1
+        x = ev_mat[iset, mind]
+        f_top, g_top, iPower_top, mode_count = get_bc_impedance(x, omega2, True, cp_top, cs_top, rho_top, 
+                                            h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
+                                            first_acoustic, last_acoustic, mode_count, False)
+           
+
+        if ( g_top == 0.0 ):
+            d[0] = 1.0
+            e[1] = 0.0
+
+        else:
+            L = ind_arr[first_acoustic] 
+            xh2 = x * h_arr[first_acoustic]**2
+            h_rho = h_arr[first_acoustic] * rho_arr[L]
+            d[0] = (b1[L] - xh2) / h_rho / 2.0 + np.real(f_top / g_top)
+
+        iTurningPoint = z.size
+        j   = 0
+        L = ind_arr[first_acoustic] 
+        #print('d[0], e[0]', d[0], e[0])
+        for Medium in range(first_acoustic, last_acoustic+1):
+            xh2= x * h_arr[Medium]**2
+            h_rho = h_arr[Medium] * rho_arr[L]
+            if Medium >= first_acoustic + 1:
+                L += 1 # skip the doubled layer point
+                d[j] = (d[j] + (b1[L] - xh2) / h_rho) / 2.0
+            for ii in range(Ng_arr[Medium]-1):
+                j += 1
+                L += 1
+                d[j] = (b1[L] - xh2) / h_rho
+                #print('d[j], e[j]', j, d[j], e[j])
+                if (b1[L] - xh2 + 2.0 > 0.0):
+                    iTurningPoint = min(j, iTurningPoint)
+
+
+        f_bott, g_bott, iPower, mode_count = get_bc_impedance(x, omega2, False, cp_bott, cs_bott, rho_bott, 
+                                            h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
+                                            first_acoustic, last_acoustic, mode_count, False)
+
+        if g_bott == 0.0:
+            d[j] = 1.0
+            e[j] = 0.0
+        else:
+            d[j] = (d[j]/2.0 - np.real(f_bott / g_bott))
+
+        #print('d[Ntotal1], e[Ntotal1]', d[d.size-1], e[d.size-1])
+
+        w, i_error = inverse_iter(d, e)
+        #print('w norm', np.sum(np.abs(w)))
+        w, pert_k, sg, ug = normalize(w, iTurningPoint,x, args, z)
+        
+        sg1 = np.trapz(w**2 / np.square(1500.0), z) * np.sqrt(omega2) / np.sqrt(x)
+        phi[:,mind] = w
+        pert_k_arr[mind] = pert_k
+        ugs_arr[mind] = ug
+    return z, phi, pert_k_arr, ugs_arr
+
+
+def mesh_list_inputs(z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, Ng_arr, attn_units, omega):
     num_layers = len(z_list)
     h_list = []
     for i in range(num_layers):
@@ -941,24 +1252,18 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
         cs_bott_imag = ap.get_c_imag(cs_bott, attns_bott, attn_units, omega)
         cs_bott = cs_bott + 1j*cs_bott_imag
 
-
-
-    
-   
-    
     M_max = 5000
     Nv = np.array([1,2,4,8,16]) # mesh refinement factors
     Nset = len(Nv)
     ev_mat = np.zeros((Nset, M_max)) # real (for now)
     extrap = np.zeros((Nset, M_max))
-
-
-
+    error = 1e10
 
     for iset in range(Nset):
         # Refine the mesh 
         Ng_arr_i = Ng_arr0 * Nv[iset]
-        h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr = mesh_list_inputs(z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, Ng_arr_i)
+        h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr = mesh_list_inputs(z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, Ng_arr_i, attn_units, omega)
+        print(h_arr, ind_arr)
 
 
         b1, b1c, b2, b3, b4, rho_arr, \
@@ -981,19 +1286,24 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
         else:
             h_v = np.append(h_v, h_arr[0])
 
-        ev_mat, M = solve1(args, h_v)
-        print('iset, M', iset, M)
+        #print('iset, M', iset, M)
 
         if iset <= 1 and (last_acoustic - first_acoustic + 1 == num_layers):
             ev_mat, M = solve1(args, h_v)
         else: # solve2
-            ev_mat, M = solve2(args, h_v, M)
+            ev_mat, M = solve2(args, h_v, M_max)
+
+
+        # if iset == 0 get phi
+        if iset == 0:
+            pargs = args + (M,)
+            z, phi, pert_k, ugs = get_phi(pargs)
 
 
         """
         Do Richardson extrapolation on ev_mat
         """
-        extrap[iset,:M] = ev_mat[iset,:].copy()
+        extrap[iset,:M] = ev_mat[iset,:M].copy()
         KEY   = int(2 * M / 3)   # index of element used to check convergence
         if iset > 0:
             T1 = extrap[0, KEY]
@@ -1011,5 +1321,9 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
             if error*rmax < 1.0:
                 break
 
-    krs = np.sqrt(extrap[0,:M])
-    return krs
+        if error*rmax < 1.0:
+            break
+    krs = np.sqrt(extrap[0,:M] + pert_k[:M])
+    #krs = np.sqrt(extrap[0,:M])
+    return krs, z, phi, ugs
+

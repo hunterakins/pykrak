@@ -16,15 +16,17 @@ from matplotlib import pyplot as plt
 from pykrak import test_helpers as th
 from pyat.pyat import readwrite as rw
 from pykrak import pykrak_env as pke
-
+from pykrak import krak_routines as kr
 import os
 
 
 def kr_comp():
-    env_files = ['pekeris_layer_attn.env', 'pekeris.env', 'pekeris_attn.env']
+    env_files = ['solve2test.env', 'pekeris_layer_attn.env','pekeris.env',  'pekeris_attn.env']
     for env in env_files:
         os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
         TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env('at_files/{}.env'.format(env[:-4]), 'kraken')
+        c_low, c_high = cint.Low, cint.High
+        attn_units = 'dbplam'
 
         modes = rw.read_modes(**{'fname':'at_files/{}.mod'.format(env[:-4]),
                                 'freq':freq})
@@ -36,16 +38,29 @@ def kr_comp():
         krak_prt_k, mode_nums, vps, vgs = th.read_krs_from_prt_file('at_files/{}.prt'.format(env[:-4]), verbose=True)
         print('krak M', modes.M)
 
-        pykrak_env, N_list = th.init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax)
-        pk_krs = pykrak_env.get_krs(**{'N_list':N_list, 'Nh':1, 'cmax':pykrak_env.c_hs-1e-10})
-        phi_z, phi = pykrak_env.phi_z, pykrak_env.phi
-        ugs = pykrak_env.get_ugs(N_list=N_list)
+        RMax = 0.0
+
+
+        pykrak_env, N_list, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_hs, cs_hs, rho_hs, attnp_hs, attns_hs, pos, beam, cint, RMax = th.init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax)
+        print('N_list', N_list)
+
+        rho_top = 0.0
+        cp_top = 0.0
+        cs_top = 0.0
+        attnp_top = 0.0
+        attns_top = 0.0
+
+        pk_krs, phi_z, phi, ugs = kr.list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, cp_hs, cs_hs, rho_hs, attnp_hs, attns_hs, 'dbplam', N_list, 0.0, c_low, c_high)
+        #pk_krs = pykrak_env.get_krs(**{'N_list':N_list, 'Nh':1, 'cmax':pykrak_env.c_hs-1e-10})
+        #phi_z, phi = pykrak_env.phi_z, pykrak_env.phi
+        #ugs = pykrak_env.get_ugs(N_list=N_list)
         
         print('pykrak M', pk_krs.size)
         for i in range(len(krak_prt_k)):
             mode_num = mode_nums[i]
             krak_k = str(krak_prt_k[i].real)
             pk_k = str(pk_krs[mode_num-1].real)
+            print(krak_prt_k[i], pk_krs[mode_num-1])
             print('krak, pk, krak vg, pvg', krak_k, pk_k, vgs[i], ugs[mode_num-1])
             num_dig= 0 
             count = 0
@@ -60,10 +75,12 @@ def kr_comp():
 
 
 def phi_comp():
-    env_files = ['pekeris_attn.env', 'pekeris.env', 'pekeris_layer_attn.env']
+    env_files = ['pekeris_layer_attn.env', 'solve2test.env', 'pekeris_attn.env', 'pekeris.env']
     for env in env_files:
         os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
         TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env('at_files/{}.env'.format(env[:-4]), 'kraken')
+
+        c_low, c_high = cint.Low, cint.High
 
         modes = rw.read_modes(**{'fname':'at_files/{}.mod'.format(env[:-4]),
                                 'freq':freq})
@@ -77,25 +94,41 @@ def phi_comp():
 
         print('krak M', modes.M)
 
-        pykrak_env, N_list = th.init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax)
-        pk_krs = pykrak_env.get_krs(**{'N_list':N_list, 'Nh':1, 'cmax':pykrak_env.c_hs-1e-10})
-        phi_z, phi = pykrak_env.phi_z, pykrak_env.phi
-        print('phiz', phi_z)  
+        #pykrak_env, N_list = th.init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax)
+        pykrak_env, N_list, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_hs, cs_hs, rho_hs, attnp_hs, attns_hs, pos, beam, cint, RMax = th.init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax)
+
+        rho_top = 0.0
+        cp_top = 0.0
+        cs_top = 0.0
+        attnp_top = 0.0
+        attns_top = 0.0
+    
+        pk_krs, phi_z, phi, ugs = kr.list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, cp_hs, cs_hs, rho_hs, attnp_hs, attns_hs, 'dbplam', N_list, 0.0, c_low, c_high)
+        #pk_krs = pykrak_env.get_krs(**{'N_list':N_list, 'Nh':1, 'cmax':pykrak_env.c_hs-1e-10})
+        #phi_z, phi = pykrak_env.phi_z, pykrak_env.phi
+        #print('phiz', phi_z)  
 
         plt.figure()
         plt.plot(phi[:,0], phi_z)
-        plt.plot(krak_modes[:,0].real, phi_z)
+        plt.plot(krak_modes[:,0].real, z)
+        plt.figure()
+        plt.plot(phi[:,1], phi_z)
+        plt.plot(krak_modes[:,1].real, z)
+        plt.figure()
+        plt.plot(phi[:,2], phi_z)
+        plt.plot(krak_modes[:,2].real, z)
 
         plt.figure()
         plt.plot(phi[:,0] - krak_modes[:,0], phi_z)
-        plt.figure()
-        plt.plot(phi_z[1:], phi[1:,0] / krak_modes[1:,0])
 
         plt.figure()
         plt.plot(phi[:,1] - krak_modes[:,1], phi_z)
         plt.figure()
+        plt.plot(phi[:,2] - krak_modes[:,2], phi_z)
+        plt.show()
+        plt.figure()
         plt.plot(phi_z[1:], phi[1:,1] / krak_modes[1:,1])
         plt.show()
 
-kr_comp()
-#phi_comp()
+#kr_comp()
+phi_comp()
