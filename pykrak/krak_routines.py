@@ -483,7 +483,7 @@ def funct(x, args):
              iPower = iPower - iPowerF
     return Delta, iPower, mode_count
 
-#@njit
+@njit
 def bisection(x_min, x_max, M, args):
     """
     Returns isolating intervals (xL, xR) for each eigenvalue
@@ -533,7 +533,7 @@ def bisection(x_min, x_max, M, args):
 
     return x_l, x_r
 
-#@njit
+@njit
 def solve1(args, h_v):
     """
     Solve for eigenvalues using Sturm sequences and Brent's method.
@@ -591,9 +591,8 @@ def solve1(args, h_v):
     delta, i_power, mode_count = funct(x_max, margs)
     m -= mode_count
 
-
     if m == 0:
-        return
+        return ev_mat, m
 
     n_total =N_arr[first_acoustic:last_acoustic+1].sum()
     if m > n_total / 5:
@@ -605,7 +604,7 @@ def solve1(args, h_v):
 
     # Refine each eigenvalue
     count_modes = False
-    print('m', m)
+    #print('m', m)
     for mode in range(1, m + 1):
         x1 = x_l[mode-1]
         x2 = x_r[mode-1]
@@ -616,10 +615,10 @@ def solve1(args, h_v):
 
 
         ev_mat[iset, mode-1] = x
-    ev_mat = ev_mat[:, :m].copy()
+    #ev_mat = ev_mat[:, :m].copy()
     return ev_mat, m
 
-#@njit
+@njit
 def solve2(args, h_v, M):
     """
     h_v is array of mesh sizes
@@ -678,11 +677,11 @@ def solve2(args, h_v, M):
 
         # Discard modes outside user-specified spectrum
         if omega2 / c_high**2 > x:
-            ev_mat = ev_mat[:, :mode].copy()
+            #ev_mat = ev_mat[:, :mode].copy()
             break
     return ev_mat, mode
 
-#@njit
+@njit
 def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
     """
     Secant method for finding roots of a real-valued function.
@@ -726,7 +725,7 @@ def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
 
     return x2, max_iterations, "Failure to converge in RootFinderSecant"
 
-#@njit
+@njit
 def root_finder_secant_complex(x2, tolerance, max_iterations, func, args):
     """
     Secant method for finding roots of a complex-valued function.
@@ -769,7 +768,7 @@ def root_finder_secant_complex(x2, tolerance, max_iterations, func, args):
             return x2, iteration, ""
 
     return x2, max_iterations, "Failure to converge in RootFinderSecant"
-#@njit
+@njit
 def zbrent(a, b, t, args):
     """
       Licensing:
@@ -873,7 +872,7 @@ def zbrent(a, b, t, args):
     return value
 
 @njit
-def inverse_iter(d, e, max_iteration=100):
+def inverse_iter(d, e, max_iteration=2000):
     """
     Perform inverse iteration to compute an eigenvector.
 
@@ -898,6 +897,7 @@ def inverse_iter(d, e, max_iteration=100):
     uk = N
     eps4 = uk * eps3
     uk = eps4 / np.sqrt(uk)
+    #print('uk', uk)
 
     # Temporary arrays
     rv1 = np.zeros(N)
@@ -927,7 +927,6 @@ def inverse_iter(d, e, max_iteration=100):
             rv3[i - 1] = 0.0
             u = d[i] - xu * v
             v = e[i + 1]
-
     if u == 0.0:
         u = eps3
 
@@ -955,7 +954,7 @@ def inverse_iter(d, e, max_iteration=100):
 
         # Scale the vector down
         xu = eps4 / norm
-        eigenvector *= xu
+        eigenvector = eigenvector*xu
 
         # Forward elimination
         for i in range(1, N):
@@ -971,7 +970,7 @@ def inverse_iter(d, e, max_iteration=100):
     i_error = -1
     return eigenvector, i_error
 
-#@njit
+@njit
 def normalize(phi, iTurningPoint, x, args, z):
     """
     Normalize the eigenvector phi and compute perturbations from attenuation and group velocity.
@@ -997,13 +996,14 @@ def normalize(phi, iTurningPoint, x, args, z):
         sg += phi[0]**2 / (2 * np.sqrt(x - np.real(omega2 / cp_top**2))) / np.real(rho_top * cp_top**2)
 
     # Volume contribution
-    L = first_acoustic-1
+    L = ind_arr[first_acoustic]-1
     j = 0
 
     for Medium in range(first_acoustic, last_acoustic + 1):
         L += 1 # L is index of first value in layer
         rhoMedium = rho_arr[L]
         rho_omega_h2 = rhoMedium * omega2 * h_arr[Medium]**2
+        #print('rho, h', rhoMedium, h_arr[Medium])
 
         # Top interface
         SqNorm += 0.5 * h_arr[Medium] * phi[j]**2 / rhoMedium
@@ -1072,7 +1072,7 @@ def normalize(phi, iTurningPoint, x, args, z):
 
     return w, Perturbation_k, sg, ug
 
-#@njit
+@njit
 def get_phi(args):
     omega2, ev_mat, iset, \
     h_arr, ind_arr, z_arr, Ng_arr, \
@@ -1082,15 +1082,17 @@ def get_phi(args):
     CountModes=False
     mode_count = 0 # doesn't matter
 
-
+    num_ac_layers = last_acoustic - first_acoustic + 1
+    N_total1 = np.sum(Ng_arr[first_acoustic:last_acoustic+1]) - (num_ac_layers ) + 1
+    #print('N_total1', N_total1)
 
     for Medium in range(first_acoustic, last_acoustic+1):
         h_rho = h_arr[ Medium ] * rho_arr[ ind_arr[Medium] ]# density at the top of each layer
-        #print('h_rho', h_rho)
         if Medium == ind_arr.size - 1:
             z_layer = z_arr[ind_arr[Medium]:]
         else:
             z_layer = z_arr[ind_arr[Medium]:ind_arr[Medium+1]]
+        #print('Nmedium', z_layer.size-1)
         if Medium == first_acoustic:
             e = 1.0 / h_rho * np.ones(z_layer.size)
             e[0] = 0.0
@@ -1102,6 +1104,8 @@ def get_phi(args):
     e = np.append(e, 1.0 / h_rho)
     # Main loop: for each eigenvalue call InverseIteration to get eigenvector
     d = np.zeros(z.size)
+    if z.size != N_total1:
+        raise Exception('z.size != N_total1, check the implementation')
     phi = np.zeros((z.size, M))
     pert_k_arr = np.zeros(M, dtype=np.complex128)
     sgs_arr= np.zeros(M)
@@ -1125,15 +1129,15 @@ def get_phi(args):
             h_rho = h_arr[first_acoustic] * rho_arr[L]
             d[0] = (b1[L] - xh2) / h_rho / 2.0 + np.real(f_top / g_top)
 
-        iTurningPoint = z.size
+        iTurningPoint = z.size-1
         j   = 0
         L = ind_arr[first_acoustic] 
         #print('d[0], e[0]', d[0], e[0])
         for Medium in range(first_acoustic, last_acoustic+1):
             xh2= x * h_arr[Medium]**2
-            h_rho = h_arr[Medium] * rho_arr[L]
+            h_rho = h_arr[Medium] * rho_arr[L+1]
             if Medium >= first_acoustic + 1:
-                L += 1 # skip the doubled layer point
+                L += 1 # advance to the top layer point in b1
                 d[j] = (d[j] + (b1[L] - xh2) / h_rho) / 2.0
             for ii in range(Ng_arr[Medium]-1):
                 j += 1
@@ -1147,17 +1151,19 @@ def get_phi(args):
         f_bott, g_bott, iPower, mode_count = get_bc_impedance(x, omega2, False, cp_bott, cs_bott, rho_bott, 
                                             h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
                                             first_acoustic, last_acoustic, mode_count, False)
+        #print('f_bott', f_bott)
+        #print('g_bott', g_bott)
 
         if g_bott == 0.0:
-            d[j] = 1.0
-            e[j] = 0.0
+            d[N_total1-1] = 1.0
+            e[N_total1-1] = 0.0
         else:
-            d[j] = (d[j]/2.0 - np.real(f_bott / g_bott))
+            d[N_total1-1] = d[j]/2.0 - np.real(f_bott / g_bott)
 
-        #print('d[Ntotal1], e[Ntotal1]', d[d.size-1], e[d.size-1])
 
+        #for i in range(N_total1):
+        #    print('i, z[i], d[i], e[i]', i, z[i], d[i], e[i])
         w, i_error = inverse_iter(d, e)
-        #print('w norm', np.sum(np.abs(w)))
         w, pert_k, sg, ug = normalize(w, iTurningPoint,x, args, z)
         
         sg1 = np.trapz(w**2 / np.square(1500.0), z) * np.sqrt(omega2) / np.sqrt(x)
@@ -1235,6 +1241,7 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
             Ng_list.append(Nneeded)
 
     Ng_arr0 = np.array(Ng_list, dtype=np.int32)
+    #print('Ng_arr0', Ng_arr0)
 
     if attnp_top > 0:
         cp_top_imag = ap.get_c_imag(cp_top, attnp_top, attn_units, omega)
@@ -1263,7 +1270,7 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
         # Refine the mesh 
         Ng_arr_i = Ng_arr0 * Nv[iset]
         h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr = mesh_list_inputs(z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, Ng_arr_i, attn_units, omega)
-        print(h_arr, ind_arr)
+        #print(h_arr, ind_arr)
 
 
         b1, b1c, b2, b3, b4, rho_arr, \
@@ -1286,12 +1293,19 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
         else:
             h_v = np.append(h_v, h_arr[0])
 
-        #print('iset, M', iset, M)
 
         if iset <= 1 and (last_acoustic - first_acoustic + 1 == num_layers):
             ev_mat, M = solve1(args, h_v)
+            if M == 0:
+                plt.figure()
+                for i in range(num_layers):
+                    plt.plot(cp_list[i], z_list[i])
+                    plt.plot(cs_list[i], z_list[i]) 
+                plt.show()
         else: # solve2
             ev_mat, M = solve2(args, h_v, M_max)
+            if omega2 / c_high**2 > ev_mat[iset, M-1]:
+                M -= 1
 
 
         # if iset == 0 get phi
@@ -1317,13 +1331,15 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
 
             T2 = extrap[0, KEY]
             error = np.abs(T2 - T1)
-            print('Error', error)
+            #print('Error', error)
             if error*rmax < 1.0:
                 break
 
         if error*rmax < 1.0:
             break
-    krs = np.sqrt(extrap[0,:M] + pert_k[:M])
+
+    M_final = min(pert_k.size, M) # in case differing number of modes for different meshes
+    krs = np.sqrt(extrap[0,:M_final] + pert_k[:M_final])
     #krs = np.sqrt(extrap[0,:M])
     return krs, z, phi, ugs
 
