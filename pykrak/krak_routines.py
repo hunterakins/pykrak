@@ -470,17 +470,17 @@ def funct(x, args):
     # so the loop below deflates the previously found roots
 
     if ( ( mode > 1 ) and (len(ind_arr) > last_acoustic - first_acoustic + 1 ) ):
-       for j in range(mode-1):
-          Delta = Delta / ( x - ev_mat[iset, j] )
+        for j in range(mode-1):
+            Delta = Delta / ( x - ev_mat[iset, j] )
 
-          # Scale if necessary
-          while ( np.abs(Delta ) < Floor and np.abs( Delta ) > 0.0):
-             Delta  = Roof * Delta
-             iPower = iPower - iPowerR
+            # Scale if necessary
+            while ( np.abs(Delta ) < Floor and np.abs( Delta ) > 0.0):
+                 Delta  = Roof * Delta
+                 iPower = iPower - iPowerR
 
-          while (np.abs( Delta ) > Roof ):
-             Delta  = Floor * Delta
-             iPower = iPower - iPowerF
+            while (np.abs( Delta ) > Roof ):
+                Delta  = Floor * Delta
+                iPower = iPower - iPowerF
     return Delta, iPower, mode_count
 
 @njit
@@ -1260,6 +1260,7 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
         cs_bott = cs_bott + 1j*cs_bott_imag
 
     M_max = 5000
+    M = M_max
     Nv = np.array([1,2,4,8,16]) # mesh refinement factors
     Nset = len(Nv)
     ev_mat = np.zeros((Nset, M_max)) # real (for now)
@@ -1303,7 +1304,7 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
                     plt.plot(cs_list[i], z_list[i]) 
                 plt.show()
         else: # solve2
-            ev_mat, M = solve2(args, h_v, M_max)
+            ev_mat, M = solve2(args, h_v, M)
             if omega2 / c_high**2 > ev_mat[iset, M-1]:
                 M -= 1
 
@@ -1313,11 +1314,13 @@ def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns
             pargs = args + (M,)
             z, phi, pert_k, ugs = get_phi(pargs)
 
+        #print('iset', iset, 'M', M, ev_mat[iset, :M])
 
-        """
-        Do Richardson extrapolation on ev_mat
-        """
+
+
         extrap[iset,:M] = ev_mat[iset,:M].copy()
+
+
         KEY   = int(2 * M / 3)   # index of element used to check convergence
         if iset > 0:
             T1 = extrap[0, KEY]
