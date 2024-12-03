@@ -21,7 +21,7 @@ import os
 
 
 def kr_comp():
-    env_files = ['solve2test.env', 'pekeris_layer_attn.env','pekeris.env',  'pekeris_attn.env']
+    env_files = ['ice_env.env', 'solve2test.env', 'pekeris_layer_attn.env','pekeris.env',  'pekeris_attn.env']
     for env in env_files:
         os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
         TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env('at_files/{}.env'.format(env[:-4]), 'kraken')
@@ -73,9 +73,8 @@ def kr_comp():
         plt.suptitle('Comparison of pykrak and kraken wavenumbers for {}'.format(env))
         plt.show()
 
-
 def phi_comp():
-    env_files = ['pekeris_layer_attn.env', 'solve2test.env', 'pekeris_attn.env', 'pekeris.env']
+    env_files = ['solve2test.env', 'pekeris_layer_attn.env', 'pekeris_attn.env', 'pekeris.env']
     for env in env_files:
         os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
         TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env('at_files/{}.env'.format(env[:-4]), 'kraken')
@@ -96,6 +95,7 @@ def phi_comp():
 
         #pykrak_env, N_list = th.init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax)
         pykrak_env, N_list, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_hs, cs_hs, rho_hs, attnp_hs, attns_hs, pos, beam, cint, RMax = th.init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax)
+        print('N_list', N_list)
 
         rho_top = 0.0
         cp_top = 0.0
@@ -108,9 +108,20 @@ def phi_comp():
         #phi_z, phi = pykrak_env.phi_z, pykrak_env.phi
         #print('phiz', phi_z)  
 
+        print(z, phi_z)
+
+
+        phi_new = np.zeros((z.size, phi.shape[1]))
+        for i in range(phi.shape[1]):
+            phi_new[:,i] = np.interp(z, phi_z, phi[:,i])
+
+        phi = phi_new
+        phi_z = z
         plt.figure()
-        plt.plot(phi[:,0], phi_z)
-        plt.plot(krak_modes[:,0].real, z)
+        plt.plot(phi[:,0]/np.sum(np.abs(phi[:,0])), phi_z, label='PyKrak')
+        plt.plot(krak_modes[:,0].real/np.sum(np.abs(phi[:,0])), z, label='Kraken')
+        plt.legend()
+        plt.show()
         plt.figure()
         plt.plot(phi[:,1], phi_z)
         plt.plot(krak_modes[:,1].real, z)
@@ -118,6 +129,8 @@ def phi_comp():
         plt.plot(phi[:,2], phi_z)
         plt.plot(krak_modes[:,2].real, z)
 
+        phi /= np.sum(np.abs(phi), axis=0)
+        krak_modes /= np.sum(np.abs(krak_modes), axis=0)
         plt.figure()
         plt.plot(phi[:,0] - krak_modes[:,0], phi_z)
 
@@ -130,5 +143,5 @@ def phi_comp():
         plt.plot(phi_z[1:], phi[1:,1] / krak_modes[1:,1])
         plt.show()
 
-#kr_comp()
+kr_comp()
 phi_comp()
