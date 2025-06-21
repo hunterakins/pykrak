@@ -69,7 +69,8 @@ def get_attn_conv_factor(units='npm', *args):
         lam = args[0]
         if np.asarray(lam).size > 1: # array
             out = np.zeros(lam.size)
-            out[lam != 0] = 1/8.6858896 / lam[lam != 0]
+            lam[lam == 0] = 1.0
+            out = 1/8.6858896 / lam
             return out
         else:
             if lam == 0:
