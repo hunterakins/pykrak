@@ -205,7 +205,7 @@ def get_rfgh(krs, r):
     """
     M = krs.size
     #rfg_arr = np.zeros((M, M, M), dtype=nb.c8)
-    rfg_arr = np.zeros((M, M, M), dtype=np.complex_)
+    rfg_arr = np.zeros((M, M, M), dtype=np.complex128)
     krs_sq = krs**2
     for f in range(M):
         krf = krs[f]
@@ -254,7 +254,7 @@ def get_dpda(zfg, krs, r, phi_zr, phi_zs):
     receiver depths zr, and source depth zs
     Using equation 18a in Thode and Kim (2004)
     """
-    dpda = np.zeros(phi_zr.shape[0],dtype=np.complex_)
+    dpda = np.zeros(phi_zr.shape[0],dtype=np.complex128)
     M = krs.size
 
     rfg = get_rfg(krs, r)
@@ -278,7 +278,7 @@ def get_mode_dpda(zfg, krs, r, phi_zs):
     d A / d a = ... \sum
     """
     M = krs.size
-    mode_dpda = np.zeros(M, dtype=np.complex_)
+    mode_dpda = np.zeros(M, dtype=np.complex128)
     M = krs.size
     rfg = get_rfg(krs, r)
     prod = zfg * rfg
@@ -303,7 +303,7 @@ def get_dpdaidaj(zfg_ai, zfg_aj, zfg_aiaj, krs, r, phi_zr, phi_zs):
     rfg = get_rfg(krs, r)
 
     Nr = phi_zr.shape[0]
-    dpdaidaj = np.zeros((Nr), dtype=np.complex_)
+    dpdaidaj = np.zeros((Nr), dtype=np.complex128)
     M = krs.size
     for f in range(M):
         for g in range(M):
@@ -442,9 +442,9 @@ def get_kernel(h_arr, ind_arr, z_arr, c_arr, rho_arr, krs, phi_z, phi, omega, zr
 
     integrator = integrator[::stride]
     M = krs.size
-    kernel = np.zeros((zr.size, rgrid.size, integrator.size), dtype=np.complex_)
+    kernel = np.zeros((zr.size, rgrid.size, integrator.size), dtype=np.complex128)
     for j in range(zr.size):
-        kernel_j = np.zeros((rgrid.size, integrator.size), dtype=np.complex_)
+        kernel_j = np.zeros((rgrid.size, integrator.size), dtype=np.complex128)
         for f in range(M):
             uf = phi[::stride,f]
             krf = krs[f]
