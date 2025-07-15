@@ -15,5 +15,7 @@ There are some examples in pykrak/examples as well.
 To install, you can use pip:
 pip install pykrak
 
-
-
+12/05/2024 Update:
+I recently implemented a more direct translation of KRAKEN in order to include elastic layers at the surface (such as ice) and elastic layers in the bottom. 
+This differs from my previous code, which did not shoot from the bottom to the surface as in KRAKEN. 
+These are in krak_routines.py, exposed through the list_input_solve function. This function is nearly identical to KRAKEN. It is benchmarked on some example environments in the tests subfolder.
