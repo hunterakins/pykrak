@@ -62,9 +62,9 @@ x = 45.320065860122355
 modeCount = 0
 fbott, gbott, iPower,_ = kr.get_bc_impedance(x, omega2, False, cp_bott, cs_bott, rho_bott, 
                                 h_arr, ind_arr, z_arr, b1, b2, b3, b4, rho_arr, 
-                                first_acoustic, last_acoustic, modeCount)
+                                first_acoustic, last_acoustic, modeCount, True)
 
 CountModes = True
 modeCount = 0
-f,g, iPower = kr.acoustic_layers(x, fbott, gbott, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, CountModes, modeCount, first_acoustic, last_acoustic)
+f,g, iPower, modeCount = kr.acoustic_layers(x, fbott, gbott, iPower, ind_arr, h_arr, z_arr, b1, rho_arr, CountModes, modeCount, first_acoustic, last_acoustic)
 print('f, g', f, g)
