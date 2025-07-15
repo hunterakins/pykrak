@@ -232,10 +232,10 @@ def get_vec_pressure(phi_zr, phi_zs, krs, rgrid, tilt_angles=None, zr=None):
     """
     num_track_pts = rgrid.size
     num_depths = phi_zr.shape[0]
-    full_p = np.zeros((num_depths, num_track_pts), dtype=np.complex_)
+    full_p = np.zeros((num_depths, num_track_pts), dtype=np.complex128)
     for i in range(num_track_pts):
         modal_matrix = phi_zr * phi_zs[:,i]
-        modal_matrix = modal_matrix.astype(np.complex_)
+        modal_matrix = modal_matrix.astype(np.complex128)
         r = rgrid[i]
         if tilt_angles is not None:
             tilt_angle = tilt_angles[i]
@@ -301,7 +301,7 @@ def get_grid_pressure(zr, phi_z, phi, krs, zgrid, rgrid, tilt_angle=None):
         r_corr = get_range_correction(zr, tilt_angle)
     else:
         r_corr = np.zeros(zr.size)
-    pfield = np.zeros((Nzr, zgrid.size, rgrid.size), dtype=np.complex_)
+    pfield = np.zeros((Nzr, zgrid.size, rgrid.size), dtype=np.complex128)
 
     # interpolate the modes to the grid depths (they are ``receivers'' in reciprocity)
     phi_zr = np.zeros((zgrid.size, krs.size))
@@ -352,10 +352,10 @@ def get_doppler_vec_pressure(phi_zr, phi_zs, krs, r_ret_grid, t_ret_grid, ums, c
 
     num_track_pts = contemp_tgrid.size
     num_zrs = phi_zr.shape[0]
-    full_p = np.zeros((num_zrs, num_track_pts), dtype=np.complex_)
+    full_p = np.zeros((num_zrs, num_track_pts), dtype=np.complex128)
     for j in range(zr.size):
         modal_matrix = phi_zr[j,:].reshape(krs.size,1) * phi_zs_dopp
-        modal_matrix = modal_matrix.astype(np.complex_)
+        modal_matrix = modal_matrix.astype(np.complex128)
         if tilt_angles is not None:
             deltaR = Z[j]*np.tan(tilt_angles * np.pi / 180.)
             zr_rgrids = rgrids + deltaR
@@ -382,7 +382,7 @@ def get_doppler_vec_pressure_deriv(phi_zr, phi_zs, dphir_dk, dphis_dk, kr, r_ret
 
     num_track_pts = contemp_tgrid.size
     num_zrs = phi_zr.shape[0]
-    full_deriv = np.zeros((num_zrs, num_track_pts), dtype=np.complex_)
+    full_deriv = np.zeros((num_zrs, num_track_pts), dtype=np.complex128)
 
     for j in range(zr.size):
         A = phi_zr[j,0] * phi_zs_dopp
@@ -419,11 +419,11 @@ def get_simple_doppler_vec_pressure(phi_zr, phi_zs, krs, rgrid, tgrid, ums, tilt
     """
     num_track_pts = rgrid.size
     num_depths = phi_zr.shape[0]
-    full_p = np.zeros((num_depths, num_track_pts), dtype=np.complex_)
+    full_p = np.zeros((num_depths, num_track_pts), dtype=np.complex128)
     dt = tgrid[1] - tgrid[0]     
     for i in range(num_track_pts):
         modal_matrix = phi_zr * phi_zs[:,i]
-        modal_matrix = modal_matrix.astype(np.complex_)
+        modal_matrix = modal_matrix.astype(np.complex128)
         r = rgrid[i]
         if i == 0:
             v = (rgrid[1] - rgrid[0]) / dt

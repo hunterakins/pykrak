@@ -15,7 +15,7 @@ setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
     ],
     packages=["pykrak"],
-    python_requires=">=3.7, <4",
+    python_requires=">=3.9, <4",
     install_requires=["numba", "numpy", "scipy", "matplotlib"],
 )
     
