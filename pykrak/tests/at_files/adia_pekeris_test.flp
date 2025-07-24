@@ -1,0 +1,16 @@
+/ ! Title 
+'RA   ' ! Option 
+999999   ! Mlimit (number of modes to include) 
+10   ! NProf
+    0.000000
+    10.000000 / ! rProf (km) 
+ 1000 	 	 	 	 ! NRR
+    0.100000
+    10.000000  / 	 ! R(1)  ... (km) 
+    1	 	 	 	 ! NSD
+    25.000000  / 	 ! SD(1)  ... (m) 
+  265 	 	 	 	 ! NRD
+    0.754717  
+    200.000000  / 	 ! RD(1)  ... (m) 
+  265 	 	 ! NRR
+      0.00  / 	 	 ! RR(1)  ... (m) 

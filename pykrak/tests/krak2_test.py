@@ -12,7 +12,6 @@ Institution: Scripps Institution of Oceanography, UC San Diego
 
 import numpy as np
 from matplotlib import pyplot as plt
-from pykrak import mesh_routines as mr
 from pykrak import krak_routines as kr
 from pykrak import attn_pert as ap
 import sys

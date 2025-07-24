@@ -61,7 +61,7 @@ def read_krs_from_prt_file(prt_file,verbose=True):
             i += 1
     return krs, mode_nums, vps, vgs
             
-def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
+def init_pykrak_env(ssp, bdry, pos, beam, cint, RMax):
     """
     Initialize a pykrak env obj from the values read in from the env files
     """
@@ -73,7 +73,6 @@ def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
     rho_list = [np.array(x.rho) for x in ssp.raw]
     attn_list = [np.array(x.alphaI) for x in ssp.raw]
     attns_list = [np.array(x.betaI) for x in ssp.raw]
-    #attn_list = [2*np.pi*freq *x / y**2 for x,y in zip(cI_list, c_list)]
     # this is npm ...so need to reverse convert?
     bot_bdry = bdry.Bot
     opt = bot_bdry.Opt
@@ -89,7 +88,7 @@ def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
         attns_hs = hs.betaI
     elif opt[0] == 'R':
         rho_hs = 1e10
-        c_hs = 000.0
+        c_hs = cint.High
         attn_hs = 000.0
         cs_hs = 0.0
         attns_hs = 0.0
@@ -97,13 +96,21 @@ def init_pykrak_env(freq, ssp, bdry, pos, beam, cint, RMax):
 
     top_opt = bdry.Top.Opt
     top_opt = top_opt.strip()
+    print('top opt', top_opt)
+    if top_opt[1] != 'V':
+        raise ValueError("This has not been implemented for a top boundary that is not pressure release")
+    cp_top = 0.0
+    rho_top = 0.0
+    attnp_top = 0.0
+    cs_top = 0.0
+    attns_top = 0.0
     atten_opt = top_opt[2]
     atten_opts = ['N', 'F', 'M', 'W', 'Q']
     py_opts = ['npm', 'dbpkmhz', 'dbpm', 'dbplam', 'q']
     attn_units = py_opts[atten_opts.index(atten_opt)]
     print('attn units', attn_units)
-    env= Env(z_list, c_list, rho_list, attn_list, c_hs, rho_hs, attn_hs, attn_units)
-    env.add_freq(freq)
+    print('c_hs', c_hs)
+    env= Env(z_list, c_list, cs_list, rho_list, attn_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, c_hs, cs_hs, rho_hs, attn_hs, attns_hs, attn_units)
     N_list = [x+1 for x in N_list] # kraken doesn't count end points?
     return env, N_list, z_list, c_list, cs_list, rho_list, attn_list, attns_list, c_hs, cs_hs, rho_hs, attn_hs, attns_hs, pos, beam, cint, RMax
 

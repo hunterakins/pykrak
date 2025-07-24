@@ -32,7 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import numpy as np
 from matplotlib import pyplot as plt
-from interp import interp
+from pykark.interp import interp
 from numba import jit, njit
 from pykrak.attn_pert import get_c_imag
 from pykrak.pressure_calc import get_arr_pressure

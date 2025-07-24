@@ -1216,6 +1216,16 @@ def mesh_list_inputs(z_list, cp_list, cs_list, rho_list, attnp_list, attns_list,
     h_arr = np.array(h_list)
     return h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr
 
+
+def get_default_cmin(c_list):
+    cmin = min([np.min(x) for x in c_list])
+    return cmin
+
+def get_default_cmax(c_hs):
+    cmax = c_hs
+    return cmax
+
+
 def list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, cp_bott, cs_bott, rho_bott, attnp_bott, attns_bott, attn_units, Ng_list, rmax, c_low, c_high):
     """
     Take the environment specified as a list of arrays (each list item is a layer)
