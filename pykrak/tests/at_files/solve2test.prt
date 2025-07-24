@@ -1,0 +1,68 @@
+ _________________________________________________
+
+ KRAKEN- Test shooting up for f,g problem                                        
+ Nominal Frequency =   200.0    Hz
+ NMedia    =   3
+
+
+     C-Linear approximation to SSP
+     Attenuation units: dB/wavelength
+     VACUUM
+
+       ( # mesh points =   800  RMS roughness =   0.00     m )
+
+ Sound speed profile:
+      z         alphaR      betaR     rho        alphaI     betaI
+     (m)         (m/s)      (m/s)   (g/cm^3)      (m/s)     (m/s)
+
+      0.00      1500.00      0.00     1.00       0.0000    0.0000
+     10.00      1500.00      0.00     1.00       0.0000    0.0000
+
+       ( # mesh points =   800  RMS roughness =   0.00     m )
+
+     10.00      1550.00      0.00     1.20       0.0000    0.0000
+     20.00      1550.00      0.00     1.20       0.0000    0.0000
+
+       ( # mesh points =  4000  RMS roughness =   0.00     m )
+
+     20.00      1600.00    300.00     1.50       0.0000    0.0000
+     25.00      1600.00    300.00     1.50       0.0000    0.0000
+
+                              ( RMS roughness =   0.00     m )
+     Perfectly RIGID
+
+ cLow =   1500.0     m/s      cHigh =   1800.0     m/s
+ RMax =   0.0000     km
+
+ __________________________________________________________________________
+
+    Number of Source   z-coordinates, Sz =            1
+    Source   z-coordinates, Sz (m)
+                 5.00000    
+
+
+ __________________________________________________________________________
+
+    Number of Receiver z-coordinates, Rz =         5001
+    Receiver z-coordinates, Rz (m)
+                 0.00000      0.500000E-02  0.100000E-01  0.150000E-01
+  0.200000E-01  0.250000E-01  0.300000E-01  0.350000E-01  0.400000E-01
+  0.450000E-01
+          ... 
+   25.0000    
+
+
+ Mesh multiplier   CPU seconds
+ NTotal, NTotal1        1600        1601
+ z(1)   0.00000000    
+  First Acoustic, Last Acoustic           1           2
+        1            0.534E-02s
+
+    I       k             alpha     Phase Speed     Group Speed
+          (1/m)           (1/m)        (m/s)           (m/s)
+    1  0.8143716630       0.0       1543.075623       1499.94    
+    2  0.7792610744       0.0       1612.600838       1751.89    
+    3  0.7289100910       0.0       1723.994601       2145.14    
+ _________________________________________________
+
+ End of environmental file
