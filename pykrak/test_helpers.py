@@ -17,41 +17,42 @@ from pyat.pyat import env as pyat_env
 from pykrak.pykrak_env import Env
 import os
 
-def read_krs_from_prt_file(prt_file,verbose=True):
+
+def read_krs_from_prt_file(prt_file, verbose=True):
     """
     .mod files have krs in single precision
     .prt files are 16 digit rounded krs in double precision
     which is more accurate
     """
-    with open(prt_file, 'r') as x:
+    with open(prt_file, "r") as x:
         i = 0
         lines = x.readlines()
         for line in lines:
-            line = line.strip(' ')
-            if line[0] == 'I':
+            line = line.strip(" ")
+            if line[0] == "I":
                 if verbose:
                     print(i)
                 i += 1
                 break
             i += 1
-        i += 1 # now i is the first mode one
+        i += 1  # now i is the first mode one
         krs = []
-        mode_nums = [] # krak will only print subset
+        mode_nums = []  # krak will only print subset
         vps = []
         vgs = []
         while True:
             line = lines[i]
-            line = line.strip(' ')
-            if line[0] == '_':
+            line = line.strip(" ")
+            if line[0] == "_":
                 return krs, mode_nums, vps, vgs
-            split_line = line.split(' ')
-            split_line = [x for x in split_line if x != '']
+            split_line = line.split(" ")
+            split_line = [x for x in split_line if x != ""]
             if verbose:
                 print(split_line)
             if float(split_line[2]) == 0.0:
                 krs.append(float(split_line[1]))
             else:
-                krs.append(float(split_line[1])+1j*float(split_line[2])) 
+                krs.append(float(split_line[1]) + 1j * float(split_line[2]))
             vp = float(split_line[3])
             vg = float(split_line[4])
             vps.append(vp)
@@ -60,7 +61,8 @@ def read_krs_from_prt_file(prt_file,verbose=True):
             mode_nums.append(int(split_line[0]))
             i += 1
     return krs, mode_nums, vps, vgs
-            
+
+
 def init_pykrak_env(ssp, bdry, pos, beam, cint, RMax):
     """
     Initialize a pykrak env obj from the values read in from the env files
@@ -78,7 +80,7 @@ def init_pykrak_env(ssp, bdry, pos, beam, cint, RMax):
     opt = bot_bdry.Opt
     hs = bot_bdry.hs
     # I don't handle shear
-    if opt[0] == 'A':
+    if opt[0] == "A":
         c_hs = hs.alphaR
         rho_hs = hs.rho
         c_hs = float(c_hs)
@@ -86,43 +88,81 @@ def init_pykrak_env(ssp, bdry, pos, beam, cint, RMax):
         rho_hs = float(rho_hs)
         attn_hs = hs.alphaI
         attns_hs = hs.betaI
-    elif opt[0] == 'R':
+    elif opt[0] == "R":
         rho_hs = 1e10
         c_hs = cint.High
         attn_hs = 000.0
         cs_hs = 0.0
         attns_hs = 0.0
 
-
     top_opt = bdry.Top.Opt
     top_opt = top_opt.strip()
-    print('top opt', top_opt)
-    if top_opt[1] != 'V':
-        raise ValueError("This has not been implemented for a top boundary that is not pressure release")
+    print("top opt", top_opt)
+    if top_opt[1] != "V":
+        raise ValueError(
+            "This has not been implemented for a top boundary that is not pressure release"
+        )
     cp_top = 0.0
     rho_top = 0.0
     attnp_top = 0.0
     cs_top = 0.0
     attns_top = 0.0
     atten_opt = top_opt[2]
-    atten_opts = ['N', 'F', 'M', 'W', 'Q']
-    py_opts = ['npm', 'dbpkmhz', 'dbpm', 'dbplam', 'q']
+    atten_opts = ["N", "F", "M", "W", "Q"]
+    py_opts = ["npm", "dbpkmhz", "dbpm", "dbplam", "q"]
     attn_units = py_opts[atten_opts.index(atten_opt)]
-    print('attn units', attn_units)
-    print('c_hs', c_hs)
-    env= Env(z_list, c_list, cs_list, rho_list, attn_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, c_hs, cs_hs, rho_hs, attn_hs, attns_hs, attn_units)
-    N_list = [x+1 for x in N_list] # kraken doesn't count end points?
-    return env, N_list, z_list, c_list, cs_list, rho_list, attn_list, attns_list, c_hs, cs_hs, rho_hs, attn_hs, attns_hs, pos, beam, cint, RMax
+    print("attn units", attn_units)
+    print("c_hs", c_hs)
+    env = Env(
+        z_list,
+        c_list,
+        cs_list,
+        rho_list,
+        attn_list,
+        attns_list,
+        cp_top,
+        cs_top,
+        rho_top,
+        attnp_top,
+        attns_top,
+        c_hs,
+        cs_hs,
+        rho_hs,
+        attn_hs,
+        attns_hs,
+        attn_units,
+    )
+    N_list = [x + 1 for x in N_list]  # kraken doesn't count end points?
+    return (
+        env,
+        N_list,
+        z_list,
+        c_list,
+        cs_list,
+        rho_list,
+        attn_list,
+        attns_list,
+        c_hs,
+        cs_hs,
+        rho_hs,
+        attn_hs,
+        attns_hs,
+        pos,
+        beam,
+        cint,
+        RMax,
+    )
+
 
 def get_krak_inputs(env, twod=False):
     """
     Get ssp object and bdy object for acoustics toolbox
     from pykrak object
-    twod flag is for bottom halfspace 
+    twod flag is for bottom halfspace
     """
     layer_list = []
     N_list = []
-    for i in range(len(env.z_list)): # for each layer
+    for i in range(len(env.z_list)):  # for each layer
         z = env.z_list[i]
         c = env.c_list[i]
         rho = env.rho_list[i]
@@ -131,21 +171,20 @@ def get_krak_inputs(env, twod=False):
         ssp = pyat_env.SSPraw(z, c, np.zeros(z.size), rho, attn, np.zeros(z.size))
         layer_list.append(ssp)
         N_list.append(z.size)
-    depths = [0] + [x[-1] for x in env.z_list] # layer depths
+    depths = [0] + [x[-1] for x in env.z_list]  # layer depths
     Nmedia = len(layer_list)
     ssp = pyat_env.SSP(layer_list, depths, Nmedia, N=N_list)
 
-    atten_opts = ['N', 'F', 'M', 'W', 'Q']
-    py_opts = ['npm', 'dbpkmhz', 'dbpm', 'dbplam', 'q']
+    atten_opts = ["N", "F", "M", "W", "Q"]
+    py_opts = ["npm", "dbpkmhz", "dbpm", "dbplam", "q"]
     attn_units = atten_opts[py_opts.index(env.attn_units)]
-    print('attn units', attn_units)
+    print("attn units", attn_units)
 
-    topbdry = pyat_env.TopBndry('CV' + attn_units)
+    topbdry = pyat_env.TopBndry("CV" + attn_units)
     hs = pyat_env.HS(env.c_hs, 0, env.rho_hs, env.attn_hs, 0)
-    bott_opt = 'A'
+    bott_opt = "A"
     if twod:
-        bott_opt += '~'
+        bott_opt += "~"
     botbdry = pyat_env.BotBndry(bott_opt, hs)
     bndry = pyat_env.Bndry(topbdry, botbdry)
     return ssp, bndry
-
