@@ -1,0 +1,20 @@
+[project]
+name = "pykrak"
+version = "0.1.0"
+description = "Python translation of Michael Porter's KRAKEN (not KRAKENC)."
+readme = "README.txt"
+requires-python = ">=3.10"
+dependencies = [
+  "matplotlib>=3.10.3",
+  "numba>=0.61.2",
+  "numpy>=2.2.6",
+]
+
+[dependency-groups]
+dev = [
+  "pre-commit>=4.2.0",
+  "ruff>=0.12.5",
+]
+test = [
+  "scipy>=1.15.3",
+]
