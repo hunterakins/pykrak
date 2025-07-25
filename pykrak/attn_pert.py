@@ -29,66 +29,72 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+
 @njit
 def get_c_imag_npm(c_real, attn_npm, omega):
     c_imag = attn_npm * c_real**2 / omega
     return c_imag
 
+
 def get_c_imag(c_real, attn, attn_units, omega):
-    if attn_units == 'dbplam' or attn_units == 'q':
-        lam = (c_real / (omega / (2*np.pi)))
+    if attn_units == "dbplam" or attn_units == "q":
+        lam = c_real / (omega / (2 * np.pi))
         args = [lam]
-    elif attn_units == 'dbpkmhz':
-        f = omega / (2*np.pi)
+    elif attn_units == "dbpkmhz":
+        f = omega / (2 * np.pi)
         args = [f]
     else:
         args = []
 
     conv_factor = get_attn_conv_factor(attn_units, *args)
-    attn_npm = attn*conv_factor # this is attenuation in nepers/meter
+    attn_npm = attn * conv_factor  # this is attenuation in nepers/meter
     c_imag = attn_npm * c_real**2 / omega
     return c_imag
 
-def get_attn_conv_factor(units='npm', *args):
+
+def get_attn_conv_factor(units="npm", *args):
     """
     Get conversion factor to get attnuation into correct units
-    Input - 
+    Input -
     units - string
         options are npm, dbpm, dbplam, dbpkmhz, q
-    optional_args - 
+    optional_args -
         can be wavelength (in meters) for dbplam or for Q
         can be frequency (in Hz) for dbpkmhz
     """
-    if units == 'npm':
+    if units == "npm":
         return 1.0
-    elif units == 'dbpm':
+    elif units == "dbpm":
         return 0.115
-    elif units == 'dbplam':
+    elif units == "dbplam":
         if len(args) == 0:
-            raise ValueError('Wavelength must be passed in if using dbplam')
+            raise ValueError("Wavelength must be passed in if using dbplam")
         lam = args[0]
-        if np.asarray(lam).size > 1: # array
+        if np.asarray(lam).size > 1:  # array
             out = np.zeros(lam.size)
             lam[lam == 0] = 1.0
-            out = 1/8.6858896 / lam
+            out = 1 / 8.6858896 / lam
             return out
         else:
             if lam == 0:
                 return 0.0
-            return 1/8.6858896 / lam
-    elif units == 'dbpkmhz':
+            return 1 / 8.6858896 / lam
+    elif units == "dbpkmhz":
         f = args[0]
         if len(args) == 0:
-            raise ValueError('Frequency must be passed in if using dbplam')
+            raise ValueError("Frequency must be passed in if using dbplam")
         return f / 8685.88960
-    elif units == 'q':
+    elif units == "q":
         if len(args) == 0:
-            raise ValueError('Wavelength must be passed in if using dbplam')
+            raise ValueError("Wavelength must be passed in if using dbplam")
         lam = args[0]
         return np.pi / lam / Q
     else:
-        raise ValueError('Invalid units passed in. options are npm, dbpm, dbplam, \
-                            dbpkmhz, q')
+        raise ValueError(
+            "Invalid units passed in. options are npm, dbpm, dbplam, \
+                            dbpkmhz, q"
+        )
+
 
 @njit
 def alpha_layer_integral(phim_layer, k_sq_imag, rho, dz):
@@ -96,10 +102,13 @@ def alpha_layer_integral(phim_layer, k_sq_imag, rho, dz):
     Trapezoid rule
     Equation 5.174 and 5175 in JKPS
     """
-    layer_integrand = k_sq_imag*np.square(phim_layer)  / rho
-    integral = dz*(np.sum(layer_integrand) - .5*layer_integrand[0] - .5*layer_integrand[-1])
+    layer_integrand = k_sq_imag * np.square(phim_layer) / rho
+    integral = dz * (
+        np.sum(layer_integrand) - 0.5 * layer_integrand[0] - 0.5 * layer_integrand[-1]
+    )
     alpha_layer = integral
     return alpha_layer
+
 
 def add_attn(omega, krs, phi, h_list, z_list, k_sq_list, rho_list, k_hs_sq, rho_hs):
     """
@@ -108,7 +117,7 @@ def add_attn(omega, krs, phi, h_list, z_list, k_sq_list, rho_list, k_hs_sq, rho_
     Relevant equations from JKPS are eqn. 5.177, where D is the depth of the halfspace
     The imaginary part of the wavenumber is negative, so that a field exp(- i k_{r} r) radiates outward,
     consistent with a forward fourier transform of the form P(f) = \int_{-\infty}^{\infty} p(t) e^{-i \omega t} \dd t
-    Input - 
+    Input -
     omega - float
         source frequency
     krs - np ndarray of floats
@@ -117,18 +126,18 @@ def add_attn(omega, krs, phi, h_list, z_list, k_sq_list, rho_list, k_hs_sq, rho_
         should be evaluated on the supplied grid of z_list
     h_list - list of floats
         step size of each layer mesh
-    z_list - list of np ndarray of floats   
+    z_list - list of np ndarray of floats
         depths for mesh of each layer
     k_sq_list - list of complex np ndarray of complex 128
         imaginary part of wavenumber squared (omega^2 / c^2) for each layer
-    rho_list - list of np ndarray of floats 
+    rho_list - list of np ndarray of floats
         densities at each depth
     attn_list - list of np ndarray of floats
         attenuation at each mesh depth (nepers/meter)
     k_hs_sq - complex 128
         halfspace imaginary part of wavenumber squared (omega^2 / c^2)
     rho_hs - float
-        halfpace density (g / m^3) 
+        halfpace density (g / m^3)
     """
     pert_krs = np.zeros((krs.size), dtype=np.complex128)
     num_modes = krs.size
@@ -136,30 +145,35 @@ def add_attn(omega, krs, phi, h_list, z_list, k_sq_list, rho_list, k_hs_sq, rho_
 
     for i in range(num_modes):
         layer_ind = 0
-        phim = phi[:,i]
+        phim = phi[:, i]
         krm = krs[i]
         alpham = 0.0
         for j in range(num_layers):
             z = z_list[j]
             num_pts = z.size
-            phim_layer = phim[layer_ind:layer_ind+num_pts]
+            phim_layer = phim[layer_ind : layer_ind + num_pts]
             k_sq = k_sq_list[j]
             rho = rho_list[j]
             dz = h_list[j]
 
             alpha_layer = alpha_layer_integral(phim_layer, k_sq.imag, rho, dz)
             alpham += alpha_layer
-            layer_ind += num_pts - 1 #since this layer point appears twice...
+            layer_ind += num_pts - 1  # since this layer point appears twice...
         gammam = np.sqrt(np.square(krm) - k_hs_sq)
         # add tail contribution
-        #bott_weight = (gammam.real - gammam).imag / rho_hs
-        #delta_alpham = bott_weight * np.square(phim[-1])  # factor of 2 because phi^2
-        delta_alpham = k_hs_sq.imag * np.square(phim[-1])/(2*gammam.real*rho_hs)  # factor of 2 because phi^2
+        # bott_weight = (gammam.real - gammam).imag / rho_hs
+        # delta_alpham = bott_weight * np.square(phim[-1])  # factor of 2 because phi^2
+        delta_alpham = (
+            k_hs_sq.imag * np.square(phim[-1]) / (2 * gammam.real * rho_hs)
+        )  # factor of 2 because phi^2
         alpham += delta_alpham
-        pert_krs[i] = np.sqrt(krm**2 + 1j*alpham)
+        pert_krs[i] = np.sqrt(krm**2 + 1j * alpham)
     return pert_krs
 
+
 from pykrak.misc import get_simpsons_integrator, get_layer_N
+
+
 @njit
 def get_layered_attn_integrator(h_arr, ind_arr, z_arr, k1_sq_arr, rho_arr):
     """
@@ -170,45 +184,48 @@ def get_layered_attn_integrator(h_arr, ind_arr, z_arr, k1_sq_arr, rho_arr):
     k1_sq_arr - IMAGINARY part  wavenumber square omega^2 / c^2 for the layer meshes concatenated
     rho_arr - density of the layer meshes concatenated
 
-    Output - 
+    Output -
     integrator - np array that contains the weights to apply to the mode product
         to get the simpsons rule integration of the mode product with eta (equation 18b)
     """
     layer_N = get_layer_N(ind_arr, z_arr)
     num_layers = len(layer_N)
     for i in range(len(layer_N)):
-        if i < num_layers -1 :
-            k_sq_i = k1_sq_arr[ind_arr[i]:ind_arr[i+1]]
-            rho_i = rho_arr[ind_arr[i]:ind_arr[i+1]]
+        if i < num_layers - 1:
+            k_sq_i = k1_sq_arr[ind_arr[i] : ind_arr[i + 1]]
+            rho_i = rho_arr[ind_arr[i] : ind_arr[i + 1]]
         else:
-            k_sq_i = k1_sq_arr[ind_arr[i]:]
-            rho_i = rho_arr[ind_arr[i]:]
-        integrator_i = get_simpsons_integrator(layer_N[i], h_arr[i])[0,:]
+            k_sq_i = k1_sq_arr[ind_arr[i] :]
+            rho_i = rho_arr[ind_arr[i] :]
+        integrator_i = get_simpsons_integrator(layer_N[i], h_arr[i])[0, :]
         integrator_i *= k_sq_i / (rho_i)
         if i == 0:
             integrator = integrator_i
         else:
-            integrator[-1] += integrator_i[0] # phi shares points with previous layer
+            integrator[-1] += integrator_i[0]  # phi shares points with previous layer
             integrator = np.concatenate((integrator, integrator_i[1:]))
     return integrator
 
+
 @njit
-def add_arr_attn(omega, krs, phi, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs):
+def add_arr_attn(
+    omega, krs, phi, h_arr, ind_arr, z_arr, k_sq_arr, rho_arr, k_hs_sq, rho_hs
+):
     k1_sq_arr = k_sq_arr.imag
     integrator = get_layered_attn_integrator(h_arr, ind_arr, z_arr, k1_sq_arr, rho_arr)
     krs_i_sq = np.zeros(krs.size)
     for m in range(krs.size):
         krm = krs[m]
-        phim = phi[:,m]
+        phim = phi[:, m]
         # integrate through layers
         alpha = np.sum(np.square(phim) * integrator)
 
         # add contribution from tail
         gamma = np.sqrt(np.square(krm) - k_hs_sq).real
         if gamma != 0:
-            delta_alpha = k_hs_sq.imag*np.square(phim[-1])/(2*gamma*rho_hs)
+            delta_alpha = k_hs_sq.imag * np.square(phim[-1]) / (2 * gamma * rho_hs)
             alpha += delta_alpha
         krs_i_sq[m] = alpha
 
-    pert_krs = np.sqrt(krs**2 + 1j*krs_i_sq)
+    pert_krs = np.sqrt(krs**2 + 1j * krs_i_sq)
     return pert_krs

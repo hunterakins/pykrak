@@ -1,6 +1,6 @@
 """
 Description:
-    Test the updated implementation 
+    Test the updated implementation
 
 Date:
     11/25/2024
@@ -34,21 +34,45 @@ def test1():
     attnp_bott = 0.0
     attns_bott = 0.0
 
-    attn_units = 'dbplam'
+    attn_units = "dbplam"
     Ng_list = [1001]
     rmax = 0.0
     freq = 10.0
     c_low = 1400.0
     c_high = 2000.0
 
-    krs, z, phi = kr.list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, cp_bott, cs_bott, rho_bott, attnp_bott, attns_bott, attn_units, Ng_list, rmax, c_low, c_high)
+    krs, z, phi = kr.list_input_solve(
+        freq,
+        z_list,
+        cp_list,
+        cs_list,
+        rho_list,
+        attnp_list,
+        attns_list,
+        cp_top,
+        cs_top,
+        rho_top,
+        attnp_top,
+        attns_top,
+        cp_bott,
+        cs_bott,
+        rho_bott,
+        attnp_bott,
+        attns_bott,
+        attn_units,
+        Ng_list,
+        rmax,
+        c_low,
+        c_high,
+    )
 
     for i in range(krs.size):
-        print('i, krs[i]', i+1, krs[i])
+        print("i, krs[i]", i + 1, krs[i])
         plt.figure()
-        plt.plot(phi[:,i], z)
+        plt.plot(phi[:, i], z)
         plt.gca().invert_yaxis()
         plt.show()
+
 
 def test2():
     z_list = [np.array([-10.0, 0.0]), np.array([0.0, 100.0])]
@@ -69,17 +93,40 @@ def test2():
     attnp_bott = 0.76
     attns_bott = 1.05
 
-    attn_units = 'dbplam'
+    attn_units = "dbplam"
     Ng_list = [1000]
     rmax = 0.0
     freq = 10.0
     c_low = 1400.0
     c_high = 2000.0
 
-    krs = kr.list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, cp_bott, cs_bott, rho_bott, attnp_bott, attns_bott, attn_units, Ng_list, rmax, c_low, c_high)
+    krs = kr.list_input_solve(
+        freq,
+        z_list,
+        cp_list,
+        cs_list,
+        rho_list,
+        attnp_list,
+        attns_list,
+        cp_top,
+        cs_top,
+        rho_top,
+        attnp_top,
+        attns_top,
+        cp_bott,
+        cs_bott,
+        rho_bott,
+        attnp_bott,
+        attns_bott,
+        attn_units,
+        Ng_list,
+        rmax,
+        c_low,
+        c_high,
+    )
 
     for i in range(krs.size):
-        print('i, krs[i]', i+1, krs[i])
+        print("i, krs[i]", i + 1, krs[i])
 
 
 test1()
