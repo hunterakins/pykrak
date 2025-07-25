@@ -41,7 +41,7 @@ def test1():
     c_low = 1400.0
     c_high = 2000.0
 
-    krs, z, phi = kr.list_input_solve(
+    krs, z, phi, ugs = kr.list_input_solve(
         freq,
         z_list,
         cp_list,
