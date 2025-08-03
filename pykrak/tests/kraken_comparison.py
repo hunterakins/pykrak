@@ -26,6 +26,7 @@ def kr_comp():
         "pekeris_layer_attn.env",
         "pekeris.env",
         "pekeris_attn.env",
+        "pekeris_rough_bdry.env"
     ]
     for env in env_files:
         # os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
@@ -70,17 +71,19 @@ def kr_comp():
         pk_krs, phi_z, phi, ugs = pykrak_env.get_modes(
             freq, N_list, rmax=RMax, c_low=c_low, c_high=c_high
         )
-
         print("pykrak M", pk_krs.size)
         for i in range(len(krak_prt_k)):
             mode_num = mode_nums[i]
             krak_k = str(krak_prt_k[i].real)
             pk_k = str(pk_krs[mode_num - 1].real)
-            print(krak_prt_k[i], pk_krs[mode_num - 1])
+
+            krak_k_imag = str(krak_prt_k[i].imag)
+            pk_k_imag = str(pk_krs[mode_num - 1].imag)
+            #print(krak_prt_k[i], pk_krs[mode_num - 1])
             print(
                 "krak, pykrak, krak vg, pykrak_vg",
-                krak_k,
-                pk_k,
+                krak_k + "   j" + krak_k_imag,
+                pk_k + "   j" + pk_k_imag,
                 vgs[i],
                 ugs[mode_num - 1],
             )
@@ -91,6 +94,12 @@ def kr_comp():
             ):
                 count += 1
             plt.plot(mode_num, count - 1, "ko")  # exclude decimal
+
+            while (
+                count < (min(len(krak_k_imag), len(pk_k_imag))) and krak_k_imag[count] == pk_k_imag[count]
+            ):
+                count += 1
+            plt.plot(mode_num, count - 1, "b+")  # exclude decimal
         plt.xlabel("Mode num")
         plt.ylabel("Number of digits in agreement \n(Includes leading zero")
         plt.grid()

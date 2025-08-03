@@ -69,6 +69,7 @@ def init_pykrak_env(ssp, bdry, pos, beam, cint, RMax):
     """
 
     N_list = ssp.N
+    sigma_list = ssp.sigma
     z_list = [np.array(x.z) for x in ssp.raw]
     c_list = [np.array(x.alphaR) for x in ssp.raw]
     cs_list = [np.array(x.betaR) for x in ssp.raw]
@@ -77,6 +78,8 @@ def init_pykrak_env(ssp, bdry, pos, beam, cint, RMax):
     attns_list = [np.array(x.betaI) for x in ssp.raw]
     # this is npm ...so need to reverse convert?
     bot_bdry = bdry.Bot
+    sigma_list.append(bot_bdry.sigma)
+    sigma_arr = np.array(sigma_list)
     opt = bot_bdry.Opt
     hs = bot_bdry.hs
     # I don't handle shear
@@ -131,6 +134,7 @@ def init_pykrak_env(ssp, bdry, pos, beam, cint, RMax):
         attn_hs,
         attns_hs,
         attn_units,
+        sigma_arr
     )
     N_list = [x + 1 for x in N_list]  # kraken doesn't count end points?
     return (

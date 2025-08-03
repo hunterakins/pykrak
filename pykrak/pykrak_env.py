@@ -60,7 +60,6 @@ class Modes:
             phi_zr[:, i] = np.interp(zr, phi_z, phi[:, i])
         return phi_zr
 
-
 class Env:
     """
     Store the environment parameters for a layered fluid medium
@@ -80,11 +79,11 @@ class Env:
     attns_list : list of numpy arrays
         the shear attenuation in each layer (0 for fluid layers)
     cp_top : float
-        the compressional speed of sound in the halfspace above the layers (0 for pressure release)
+        the compressional speed of sound in the halfspace above the layers
     cs_top : float
-        the shear speed of sound in the halfspace above the layers (0 for pressure release)
+        the shear speed of sound in the halfspace above the layers
     rho_top : float
-        the density of the halfspace above the layers (0 for pressure release)
+        the density of the halfspace above the layers (0 for pressure release, 1e10 for rigid)
     attnp_top : float
         the compressional attenuation in the halfspace above the layers (0 for pressure release)
     attns_top : float
@@ -100,6 +99,10 @@ class Env:
     attn_units : str
         options are npm, dbpm, dbplam, dbpkmhz, q
         which is Nepers/meter, decibels per meter, decibels per wavelength, decibels per kilometer per hertz, or q
+    sigma_arr : numpy array of floats
+        rms roughness for each interface (same units as grid)
+        The number of interfaces is one more than the number of layers
+        0 is no roughness
     """
 
     def __init__(
@@ -121,6 +124,7 @@ class Env:
         attnp_bott,
         attns_bott,
         attn_units,
+        sigma_arr
     ):
         self.z_list = z_list
         self.cp_list = cp_list
@@ -142,6 +146,7 @@ class Env:
         self.attns_bott = attns_bott
 
         self.attn_units = attn_units
+        self.sigma_arr = sigma_arr
 
     def get_modes(self, freq, Ng_list=[], rmax=0.0, c_low=0.0, c_high=1e10):
         """
@@ -189,6 +194,7 @@ class Env:
             rmax,
             c_low,
             c_high,
+            self.sigma_arr
         )
 
         # pk_krs, phi_z, phi, ugs = kr.list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, cp_hs, cs_hs, rho_hs, attnp_hs, attns_hs, 'dbplam', N_list, RMax, c_low, c_high)
@@ -264,7 +270,6 @@ class Env:
         )
         return
 
-
 class FluidEnv(Env):
     def __init__(
         self,
@@ -286,6 +291,7 @@ class FluidEnv(Env):
         attns_top = 0.0
         cs_bott = 0.0
         attns_bott = 0.0
+        sigma_arr = np.zeros(len(z_list) + 1)
 
         super().__init__(
             z_list,
@@ -305,4 +311,5 @@ class FluidEnv(Env):
             attnp_bott,
             attns_bott,
             attn_units,
+            sigma_arr=sigma_arr
         )
