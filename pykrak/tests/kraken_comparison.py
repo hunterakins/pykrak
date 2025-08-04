@@ -16,6 +16,7 @@ from matplotlib import pyplot as plt
 from pykrak import test_helpers as th
 from pyat.pyat import readwrite as rw
 from pykrak import krak_routines as kr
+from pykrak import field as field
 import os
 
 
@@ -163,39 +164,90 @@ def phi_comp():
 
         phi = phi_new
         phi_z = z
-        plt.figure()
-        plt.plot(phi[:, 0] / np.sum(np.abs(phi[:, 0])), phi_z, label="PyKrak")
-        plt.plot(krak_modes[:, 0].real / np.sum(np.abs(phi[:, 0])), z, label="Kraken")
-        plt.legend()
-        plt.show()
-        plt.figure()
-        plt.plot(phi[:, 1], phi_z, label="PyKrak")
-        plt.plot(krak_modes[:, 1].real, z, label="KRAKEN")
-        plt.legend()
-        plt.ylabel("z (m)")
-        plt.figure()
-        plt.plot(phi[:, 2], phi_z, label="PyKrak")
-        plt.plot(krak_modes[:, 2].real, z, label="KRAKEN")
-        plt.legend()
-        plt.ylabel("z (m)")
 
-        phi /= np.sum(np.abs(phi), axis=0)
-        krak_modes /= np.sum(np.abs(krak_modes), axis=0)
-        plt.figure()
-        plt.suptitle("Difference in mode shape from PyKrak and KRAKEN\nMode 1")
-        plt.plot(phi[:, 0] - krak_modes[:, 0], phi_z)
-        plt.ylabel("z (m)")
+        for i in range(3):
+            plt.figure()
+            plt.suptitle('Mode {}'.format(i+1))
+            plt.plot(phi[:, 1], phi_z, label="PyKrak")
+            plt.plot(krak_modes[:, 1].real, z, label="KRAKEN")
+            plt.legend()
+            plt.gca().invert_yaxis()
+            plt.xlabel('Phi')
+            plt.ylabel('z (m)')
 
-        plt.figure()
-        plt.plot(phi[:, 1] - krak_modes[:, 1], phi_z)
-        plt.suptitle("Difference in mode shape from PyKrak and KRAKEN\nMode 2")
-        plt.ylabel("z (m)")
-        plt.figure()
-        plt.plot(phi[:, 2] - krak_modes[:, 2], phi_z)
-        plt.suptitle("Difference in mode shape from PyKrak and KRAKEN\nMode 3")
-        plt.ylabel("z (m)")
+
+            plt.figure()
+            plt.plot(phi[:, i] - krak_modes[:, i], phi_z)
+            plt.suptitle("Difference in mode shape from PyKrak and KRAKEN\nMode {}".format(i+1))
+            plt.ylabel('z (m)')
+            plt.xlabel('Difference in mode shape')
+            plt.gca().invert_yaxis()
         plt.show()
 
+def field_comp():
+    env_files = [
+        "pekeris.env",
+    ]
+    for env in env_files:
+        TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env(
+            "at_files/{}.env".format(env[:-4]), "kraken"
+        )
+        c_low, c_high = cint.Low, cint.High
+        attn_units = "dbplam"
 
+
+        RMax = 0.0
+
+        (
+            pykrak_env,
+            N_list,
+            z_list,
+            cp_list,
+            cs_list,
+            rho_list,
+            attnp_list,
+            attns_list,
+            cp_hs,
+            cs_hs,
+            rho_hs,
+            attnp_hs,
+            attns_hs,
+            pos,
+            beam,
+            cint,
+            RMax,
+        ) = th.init_pykrak_env(ssp, bdry, pos, beam, cint, RMax)
+        pk_krs, phi_z, phi, ugs = pykrak_env.get_modes(
+            freq, N_list, rmax=RMax, c_low=c_low, c_high=c_high
+        )
+
+        zs = 500.0
+        zs_arr = np.array([zs])
+        zr = 2500.0
+        zr_arr = np.array([zr])
+        rr_arr = np.linspace(200.0, 220, 1001)*1e3
+        rr_offset = 0.0
+        print('freq', freq)
+        rr_offset_arr = np.array([rr_offset])
+        c_ref = 1500.0
+        #beam_pattern = np.empty((0, 2), dtype=np.float64)
+
+        cp = field.get_pressure(pk_krs, phi_z, phi, zs_arr, zr_arr, rr_arr, rr_offset_arr, freq)
+        cp_src = field.get_pressure(pk_krs, phi_z, phi, zs_arr, zr_arr, np.array([1.0]), rr_offset_arr, freq)
+        plt.figure()
+        P_DB = 20*np.log10(np.abs(cp[0,0,:])) # get field along the line
+        P_DB_src = 20*np.log10(np.abs(cp_src[0,0,0])) # get field at 1 m from the source
+        print('P_DB_src', P_DB_src)
+        TL = P_DB_src - P_DB
+        plt.suptitle("Comparison of PyKRAK field for {}".format(env))
+        plt.plot(rr_arr/1e3, TL, label="PyKrak")
+        #plt.colorbar(label="TL (dB)")
+        plt.gca().invert_yaxis()
+        plt.xlabel('Range (km)')
+        plt.ylabel('TL (dB)')
+        plt.show()
+
+
+field_comp()
 kr_comp()
 phi_comp()
