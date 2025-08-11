@@ -389,6 +389,15 @@ def vec_lin_int(xpts, xgrid, ygrid):
         yout[i] = lin_int(xpts[i], xgrid, ygrid)
     return yout
 
+def vec_vec_lin_int(xpts, xgrid, ygridgrid):
+    """
+    Each column of ygridgrid is a function evaluated at xgrid
+    Interpolate each column to all points in xpts and save in array
+    """
+    yout = np.zeros((xpts.size, ygridgrid.shape[1]), dtype=ygridgrid.dtype)
+    for i in range(ygridgrid.shape[1]):
+        yout[:, i] = vec_lin_int(xpts, xgrid, ygridgrid[:, i])
+    return yout
 
 def get_depth_spline(z, c, cp1, cpn):
     """

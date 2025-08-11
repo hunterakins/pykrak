@@ -1727,16 +1727,6 @@ def mesh_list_inputs(
     return h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr
 
 
-def get_default_cmin(c_list):
-    cmin = min([np.min(x) for x in c_list])
-    return cmin
-
-
-def get_default_cmax(c_hs):
-    cmax = c_hs
-    return cmax
-
-
 def list_input_solve(
     freq,
     z_list,
@@ -1814,7 +1804,7 @@ def list_input_solve(
 
     for iset in range(Nset):
         # Refine the mesh
-        Ng_arr_i = Ng_arr0 * Nv[iset]
+        Ng_arr_i = (Ng_arr0 - 1) * Nv[iset] + 1
         h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr = mesh_list_inputs(
             z_list,
             cp_list,
@@ -1826,7 +1816,6 @@ def list_input_solve(
             attn_units,
             omega,
         )
-        # print(h_arr, ind_arr)
 
         (
             b1,
@@ -1889,6 +1878,10 @@ def list_input_solve(
         if iset == 0:
             h_v = np.array([h_arr[0]])
         else:
+            if not np.isclose(h_v[-1], h_arr[0]*Nv[iset]/ Nv[iset-1]): 
+                raise ValueError(
+                    f"Mesh refinement factor mismatch: {h_v[-1]} != {h_arr[0]*Nv[iset]}"
+                )
             h_v = np.append(h_v, h_arr[0])
 
         if iset <= 1 and (last_acoustic - first_acoustic + 1 == num_layers):
@@ -1913,6 +1906,8 @@ def list_input_solve(
 
         extrap[iset, :M] = ev_mat[iset, :M].copy()
 
+        error = 1e10
+
         KEY = int(2 * M / 3)  # index of element used to check convergence
         if iset > 0:
             T1 = extrap[0, KEY]
@@ -1926,10 +1921,9 @@ def list_input_solve(
 
             T2 = extrap[0, KEY]
             error = np.abs(T2 - T1)
-            # print('Error', error)
             if error * rmax < 1.0:
                 break
-
+    
         if error * rmax < 1.0:
             break
 
