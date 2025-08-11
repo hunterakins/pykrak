@@ -27,8 +27,11 @@ from numba import njit, prange
 import numba as nb
 from pykrak import interp
 
+
 @njit
-def get_pressure_core(krs, zmesh, phimesh, zs_arr, zr_arr, rr_arr, rr_offset, freq, c_ref, beam_pattern, M):
+def get_pressure_core(
+    krs, zmesh, phimesh, zs_arr, zr_arr, rr_arr, rr_offset, freq, c_ref, beam_pattern, M
+):
     """
     Compute the pressure field produced by each source at the depth specificed in zs_arr at the origin
     the field is evalued at each point in the direct product of values in zr_arr and rr_arr
@@ -47,7 +50,7 @@ def get_pressure_core(krs, zmesh, phimesh, zs_arr, zr_arr, rr_arr, rr_offset, fr
     rr_arr - float or np 1d array
         ranges at which the field is evaluated
     rr_offset - float or np 1d array
-        An additional range offset for each receiver depth. 
+        An additional range offset for each receiver depth.
     c_ref - float
         Reference speed at source depth for beam pattern calculation
     beam_pattern - np 2d array
@@ -72,56 +75,71 @@ def get_pressure_core(krs, zmesh, phimesh, zs_arr, zr_arr, rr_arr, rr_offset, fr
     Nzr = zr_arr.size
     Nrr = rr_arr.size
     beam_pattern = np.asarray(beam_pattern)
-    
-    if rr_offset.size == 1: # scalar input
-        rr_offset = rr_offset * np.ones(Nzr)
 
+    if rr_offset.size == 1:  # scalar input
+        rr_offset = rr_offset * np.ones(Nzr)
 
     field = np.zeros((Ns, Nzr, Nrr), dtype=np.complex128)
 
-    #phi_zs = phi_interp(zs_arr, zmesh, phimesh)
+    # phi_zs = phi_interp(zs_arr, zmesh, phimesh)
     phi_zs = interp.vec_vec_lin_int(zs_arr, zmesh, phimesh)
 
-    #phi_zr = phi_interp(zr_arr, zmesh, phimesh)
+    # phi_zr = phi_interp(zr_arr, zmesh, phimesh)
     phi_zr = interp.vec_vec_lin_int(zr_arr, zmesh, phimesh)
 
     modal_term = np.zeros((M, Nrr), dtype=np.complex128)
     for m in range(M):
         krm = krs[m]
         phase = krm * rr_arr
-        modal_term[m,:] = np.exp(-1j * krm * rr_arr) / np.sqrt(krm.real * rr_arr)
+        modal_term[m, :] = np.exp(-1j * krm * rr_arr) / np.sqrt(krm.real * rr_arr)
 
     for i_s in range(Ns):
         phi_zs_i = phi_zs[i_s, :]
-        C_i = phi_zs_i #
+        C_i = phi_zs_i  #
 
-        if beam_pattern.shape[0] > 0: # apply beam pattern
-            beam_angles = beam_pattern[:,0]
-            beam_values = beam_pattern[:,1]
-            omega = 2*np.pi*freq
+        if beam_pattern.shape[0] > 0:  # apply beam pattern
+            beam_angles = beam_pattern[:, 0]
+            beam_values = beam_pattern[:, 1]
+            omega = 2 * np.pi * freq
             kz2 = np.real(omega**2 / c_ref**2 - krs**2)  # vertical wavenumber squared
             kz2 = np.maximum(kz2, 0)
 
-            thetaT = np.rad2deg(np.arctan(np.sqrt(kz2) / krs.real))  # calculate the mode angle in degrees
-            S = np.interp(thetaT, beam_angles, beam_values) # shading
+            thetaT = np.rad2deg(
+                np.arctan(np.sqrt(kz2) / krs.real)
+            )  # calculate the mode angle in degrees
+            S = np.interp(thetaT, beam_angles, beam_values)  # shading
             S = np.real(S)
             C_i = C_i * S  # apply the shading
 
         for i_rz in range(Nzr):
             phi_zr_i = phi_zr[i_rz, :]
             total = np.zeros((Nrr), dtype=np.complex128)
-            for m in range(M):# sum over modes
-                modal_term_m = C_i[m] * phi_zr_i[m] * modal_term[m, :]  
+            for m in range(M):  # sum over modes
+                modal_term_m = C_i[m] * phi_zr_i[m] * modal_term[m, :]
                 # add range offset
                 offset_phase = np.exp(-1j * krs[m] * rr_offset[i_rz])
                 modal_term_m = offset_phase * modal_term_m
                 total += modal_term_m
             field[i_s, i_rz, :] = total
-    field  = field * np.conj(1j * np.exp(-1j * np.pi/4) / np.sqrt(8*np.pi)) # conj. here because JKPS use difft F.T. convention, see note baove
+    field = field * np.conj(
+        1j * np.exp(-1j * np.pi / 4) / np.sqrt(8 * np.pi)
+    )  # conj. here because JKPS use difft F.T. convention, see note baove
     return field
 
 
-def get_pressure(krs, zmesh, phimesh, zs, zr, rr, rr_offset, freq, c_ref=0.0, beam_pattern=0.0, Mlim=10000000):
+def get_pressure(
+    krs,
+    zmesh,
+    phimesh,
+    zs,
+    zr,
+    rr,
+    rr_offset,
+    freq,
+    c_ref=0.0,
+    beam_pattern=0.0,
+    Mlim=10000000,
+):
     M = min(krs.size, Mlim)
     zs_arr = np.asarray(zs)
     Ns = zs_arr.size
@@ -131,18 +149,30 @@ def get_pressure(krs, zmesh, phimesh, zs, zr, rr, rr_offset, freq, c_ref=0.0, be
     Nrr = rr_arr.size
     rr_offset = np.asarray(rr_offset)
     beam_pattern = np.asarray(beam_pattern)
-    
-    if rr_offset.ndim == 0: # scalar input
+
+    if rr_offset.ndim == 0:  # scalar input
         rr_offset = rr_offset * np.ones(Nzr)
-    if zs_arr.ndim == 0: # scalar input
+    if zs_arr.ndim == 0:  # scalar input
         zs_arr = zs_arr * np.ones(Ns)
-    if zr_arr.ndim == 0: # scalar input
+    if zr_arr.ndim == 0:  # scalar input
         zr_arr = zr_arr * np.ones(Nzr)
-    if rr_arr.ndim == 0: # scalar input
+    if rr_arr.ndim == 0:  # scalar input
         rr_arr = rr_arr * np.ones(Nrr)
 
     if beam_pattern.ndim == 0:
         beam_pattern = np.empty((0, 2), dtype=np.float64)
 
-    field = get_pressure_core(krs, zmesh, phimesh, zs_arr, zr_arr, rr_arr, rr_offset, freq, c_ref, beam_pattern, M)
+    field = get_pressure_core(
+        krs,
+        zmesh,
+        phimesh,
+        zs_arr,
+        zr_arr,
+        rr_arr,
+        rr_offset,
+        freq,
+        c_ref,
+        beam_pattern,
+        M,
+    )
     return field

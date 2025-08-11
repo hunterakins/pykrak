@@ -41,8 +41,7 @@ def test1():
     c_low = 1400.0
     c_high = 2000.0
 
-    sigma_arr = np.zeros(len(z_list) + 1) # RMS roughness for the interfaces
-
+    sigma_arr = np.zeros(len(z_list) + 1)  # RMS roughness for the interfaces
 
     krs, z, phi, ugs = kr.list_input_solve(
         freq,
@@ -67,7 +66,7 @@ def test1():
         rmax,
         c_low,
         c_high,
-        sigma_arr
+        sigma_arr,
     )
 
     for i in range(krs.size):
@@ -104,7 +103,7 @@ def test2():
     c_low = 1400.0
     c_high = 2000.0
 
-    sigma_arr = np.zeros(len(z_list) + 1) # RMS roughness for the interfaces
+    sigma_arr = np.zeros(len(z_list) + 1)  # RMS roughness for the interfaces
 
     krs = kr.list_input_solve(
         freq,
@@ -129,7 +128,7 @@ def test2():
         rmax,
         c_low,
         c_high,
-        sigma_arr
+        sigma_arr,
     )
 
     for i in range(krs.size):

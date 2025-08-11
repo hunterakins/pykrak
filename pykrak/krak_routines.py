@@ -1220,7 +1220,7 @@ def normalize(phi, iTurningPoint, x, args, z):
         first_acoustic,
         last_acoustic,
         M,
-        sigma_arr
+        sigma_arr,
     ) = args
     mode_count = 0
     count_modes = False
@@ -1392,8 +1392,8 @@ def normalize(phi, iTurningPoint, x, args, z):
 
     Perturbation_k = Perturbation_k + scattering_k
 
-
     return w, Perturbation_k, sg, ug
+
 
 @njit
 def scatter_root(z):
@@ -1402,35 +1402,43 @@ def scatter_root(z):
     else:
         return -np.sqrt(-z) * 1j
 
+
 @njit
 def kup_ing(sigma, eta1_sq, rho1, eta2_sq, rho2, P, U):
     """
     Kuperman ingenito imaginary part of wavenumber for boundary roughnesss
     sigma - rms amplitude of the boundary roughness
     """
-    ret = 0.0+0.0j
+    ret = 0.0 + 0.0j
     if sigma == 0.0:
         return ret
 
     eta1 = scatter_root(eta1_sq)
     eta2 = scatter_root(eta2_sq)
-    delta = rho1*eta2 + rho2*eta1
+    delta = rho1 * eta2 + rho2 * eta1
     if delta == 0.0:
         return ret
     else:
-        a11 = 0.5 * (eta1_sq - eta2_sq) - (rho2 * eta1_sq - rho1 * eta2_sq) * (eta1 + eta2) / delta
-        a12 = 1j * (rho2 - rho1)**2 * eta1 * eta2 / delta
-        a21 = -1j * (rho2 * eta1_sq - rho1 * eta2_sq)**2 / (rho1 * rho2 * delta)
-        a22 = 0.5 * (eta1_sq - eta2_sq) + (rho2 - rho1) * eta1 * eta2 * (eta1 + eta2) / delta
+        a11 = (
+            0.5 * (eta1_sq - eta2_sq)
+            - (rho2 * eta1_sq - rho1 * eta2_sq) * (eta1 + eta2) / delta
+        )
+        a12 = 1j * (rho2 - rho1) ** 2 * eta1 * eta2 / delta
+        a21 = -1j * (rho2 * eta1_sq - rho1 * eta2_sq) ** 2 / (rho1 * rho2 * delta)
+        a22 = (
+            0.5 * (eta1_sq - eta2_sq)
+            + (rho2 - rho1) * eta1 * eta2 * (eta1 + eta2) / delta
+        )
 
-        ret = -sigma**2 * (-a21 * P**2 + ( a11 - a22 ) * P * U + a12 * U**2)
+        ret = -(sigma**2) * (-a21 * P**2 + (a11 - a22) * P * U + a12 * U**2)
         return ret
+
 
 @njit
 def scatterloss(args, phi, x):
     """
-    perturbation_k - complex wavenumber, already includes volume attenuation from 
-    perturbation theory 
+    perturbation_k - complex wavenumber, already includes volume attenuation from
+    perturbation theory
     phi - mode shape
     x - eigenvalue
     """
@@ -1460,62 +1468,69 @@ def scatterloss(args, phi, x):
         first_acoustic,
         last_acoustic,
         M,
-        sigma_arr
+        sigma_arr,
     ) = args
 
-    j = 0 #this index is for the phi depth grid which does not have doubled interface points
+    j = 0  # this index is for the phi depth grid which does not have doubled interface points
 
     scattering_perturbation_k = 0.0
 
     if b1.size != np.sum(Ng_arr):
-        raise ValueError('b1.size != sum(Ng_arr), check the implementation')
+        raise ValueError("b1.size != sum(Ng_arr), check the implementation")
 
-    for i in range(first_acoustic, last_acoustic + 2): # iterate over interfaces
-        #print('Acoustic layer index', i)
-        if i == first_acoustic: # do top interface
-            if rho_top == 0: # Vacuum
+    for i in range(first_acoustic, last_acoustic + 2):  # iterate over interfaces
+        # print('Acoustic layer index', i)
+        if i == first_acoustic:  # do top interface
+            if rho_top == 0:  # Vacuum
                 rho1 = 1e-9
                 eta1_sq = 1.0
                 rhoInside = rho_arr[ind_arr[i]]
-                #print(ind_arr[i])
-                #print('rhoInside', rhoInside)
+                # print(ind_arr[i])
+                # print('rhoInside', rhoInside)
                 U = phi[1] / h_arr[i] / rhoInside
-            elif rho_top == 1e10: # Rigid
-                rho1 =1e9 # I used 1e10 to designate rigid, but to imitate Kraken I use 1e9 for the scatter loss
+            elif rho_top == 1e10:  # Rigid
+                rho1 = 1e9  # I used 1e10 to designate rigid, but to imitate Kraken I use 1e9 for the scatter loss
                 eta1_sq = 1.0
                 U = 0.0
             else:
                 rho1 = rho_top
-                eta1_sq = x - omega2 / cp_top ** 2
+                eta1_sq = x - omega2 / cp_top**2
                 U = np.sqrt(eta1_sq) * phi[0] / rho1
-        else: # use rho1, etaSq, U layer
-            h2 = h_arr[i-1]**2
-            j = j + Ng_arr[i-1] - 1 # this is the index of the interface in the phi depth grid
-            L = ind_arr[i-1] + Ng_arr[i-1] - 1 # point at interface from above in the numerical mesh
-            rho1 = rho_arr[L] # density at the top of the layer
+        else:  # use rho1, etaSq, U layer
+            h2 = h_arr[i - 1] ** 2
+            j = (
+                j + Ng_arr[i - 1] - 1
+            )  # this is the index of the interface in the phi depth grid
+            L = (
+                ind_arr[i - 1] + Ng_arr[i - 1] - 1
+            )  # point at interface from above in the numerical mesh
+            rho1 = rho_arr[L]  # density at the top of the layer
             eta1_sq = (2.0 + b1[L]) / h2 - x
-            U = (-phi[j-1] - 0.5 * (b1[L] - h2*x) * phi[j]) / (h_arr[i-1] * rho1)
+            U = (-phi[j - 1] - 0.5 * (b1[L] - h2 * x) * phi[j]) / (h_arr[i - 1] * rho1)
 
-        # now get eta2sq, rho2, 
-        if i == last_acoustic+1: # bottom halfpsace
+        # now get eta2sq, rho2,
+        if i == last_acoustic + 1:  # bottom halfpsace
             if rho_bott == 0:  # Vacuum
                 rho2 = 1e-9
                 eta2_sq = 1.0
-            elif rho_bott == 1e10: # Rigid
+            elif rho_bott == 1e10:  # Rigid
                 rho2 = 1e9  #
                 eta2_sq = 1.0
             else:
                 rho2 = rho_bott
-                eta2_sq = omega2 / cp_bott ** 2 - x
+                eta2_sq = omega2 / cp_bott**2 - x
 
         else:
-            rho2   = rho_arr[ind_arr[i]]
-            eta2_sq = ( 2.0 + b1[ind_arr[i]] ) / h_arr[i]**2 - x
+            rho2 = rho_arr[ind_arr[i]]
+            eta2_sq = (2.0 + b1[ind_arr[i]]) / h_arr[i] ** 2 - x
 
         phiC = phi[j]  # mode shape at the interface
-        #print('rho1', rho1, 'rho2', rho2, 'sigma', sigma_arr[i], 'eta_sq', eta1_sq, eta2_sq, 'phiC', phiC, 'U', U)
-        scattering_perturbation_k = scattering_perturbation_k + kup_ing(sigma_arr[i], eta1_sq, rho1, eta2_sq, rho2, phiC, U)
+        # print('rho1', rho1, 'rho2', rho2, 'sigma', sigma_arr[i], 'eta_sq', eta1_sq, eta2_sq, 'phiC', phiC, 'U', U)
+        scattering_perturbation_k = scattering_perturbation_k + kup_ing(
+            sigma_arr[i], eta1_sq, rho1, eta2_sq, rho2, phiC, U
+        )
     return scattering_perturbation_k
+
 
 @njit
 def get_phi(args):
@@ -1545,7 +1560,7 @@ def get_phi(args):
         first_acoustic,
         last_acoustic,
         M,
-        sigma_arr
+        sigma_arr,
     ) = args
     CountModes = False
     mode_count = 0  # doesn't matter
@@ -1750,7 +1765,7 @@ def list_input_solve(
     rmax,
     c_low,
     c_high,
-    sigma_arr
+    sigma_arr,
 ):
     """
     Take the environment specified as a list of arrays (each list item is a layer)
@@ -1878,9 +1893,9 @@ def list_input_solve(
         if iset == 0:
             h_v = np.array([h_arr[0]])
         else:
-            if not np.isclose(h_v[-1], h_arr[0]*Nv[iset]/ Nv[iset-1]): 
+            if not np.isclose(h_v[-1], h_arr[0] * Nv[iset] / Nv[iset - 1]):
                 raise ValueError(
-                    f"Mesh refinement factor mismatch: {h_v[-1]} != {h_arr[0]*Nv[iset]}"
+                    f"Mesh refinement factor mismatch: {h_v[-1]} != {h_arr[0] * Nv[iset]}"
                 )
             h_v = np.append(h_v, h_arr[0])
 
@@ -1899,7 +1914,7 @@ def list_input_solve(
 
         # if iset == 0 get phi
         if iset == 0:
-            pargs = args + (M,sigma_arr)
+            pargs = args + (M, sigma_arr)
             z, phi, pert_k, ugs = get_phi(pargs)
 
         # print('iset', iset, 'M', M, ev_mat[iset, :M])
@@ -1923,7 +1938,7 @@ def list_input_solve(
             error = np.abs(T2 - T1)
             if error * rmax < 1.0:
                 break
-    
+
         if error * rmax < 1.0:
             break
 

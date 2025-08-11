@@ -32,15 +32,15 @@ def kr_comp():
         "pekeris_layer_attn.env",
         "pekeris.env",
         "pekeris_attn.env",
-        "pekeris_rough_bdry.env"
+        "pekeris_rough_bdry.env",
     ]
     for env in env_files:
-        #os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
+        # os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
         TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env(
             "at_files/{}.env".format(env[:-4]), "kraken"
         )
         c_low, c_high = cint.Low, cint.High
-        print('c_low', c_low, 'c_high', c_high)
+        print("c_low", c_low, "c_high", c_high)
         attn_units = "dbplam"
 
         modes = rw.read_modes(
@@ -53,8 +53,8 @@ def kr_comp():
             "at_files/{}.prt".format(env[:-4]), verbose=False
         )
         print("krak M", modes.M)
-    
-        print('RMax', RMax)
+
+        print("RMax", RMax)
         RMax = RMax * 1e3  # Convert to meters
 
         (
@@ -81,7 +81,7 @@ def kr_comp():
         )
 
         print("pykrak M", pk_krs.size)
-        #sys.exit()
+        # sys.exit()
         if modes.M != pk_krs.size:
             print(
                 "Warning: Number of modes in kraken and pykrak do not match! {} != {}".format(
@@ -95,7 +95,7 @@ def kr_comp():
 
             krak_k_imag = str(krak_prt_k[i].imag)
             pk_k_imag = str(pk_krs[mode_num - 1].imag)
-            #print(krak_prt_k[i], pk_krs[mode_num - 1])
+            # print(krak_prt_k[i], pk_krs[mode_num - 1])
             print(
                 "krak, pykrak, krak vg, pykrak_vg",
                 krak_k + "   j" + krak_k_imag,
@@ -112,7 +112,8 @@ def kr_comp():
             plt.plot(mode_num, count - 1, "ko")  # exclude decimal
 
             while (
-                count < (min(len(krak_k_imag), len(pk_k_imag))) and krak_k_imag[count] == pk_k_imag[count]
+                count < (min(len(krak_k_imag), len(pk_k_imag)))
+                and krak_k_imag[count] == pk_k_imag[count]
             ):
                 count += 1
             plt.plot(mode_num, count - 1, "b+")  # exclude decimal
@@ -121,6 +122,7 @@ def kr_comp():
         plt.grid()
         plt.suptitle("Comparison of pykrak and kraken wavenumbers for {}".format(env))
         plt.show()
+
 
 def phi_comp():
     env_files = [
@@ -188,22 +190,24 @@ def phi_comp():
 
         for i in range(3):
             plt.figure()
-            plt.suptitle('Mode {}'.format(i+1))
+            plt.suptitle("Mode {}".format(i + 1))
             plt.plot(phi[:, 1], phi_z, label="PyKrak")
             plt.plot(krak_modes[:, 1].real, z, label="KRAKEN")
             plt.legend()
             plt.gca().invert_yaxis()
-            plt.xlabel('Phi')
-            plt.ylabel('z (m)')
-
+            plt.xlabel("Phi")
+            plt.ylabel("z (m)")
 
             plt.figure()
             plt.plot(phi[:, i] - krak_modes[:, i], phi_z)
-            plt.suptitle("Difference in mode shape from PyKrak and KRAKEN\nMode {}".format(i+1))
-            plt.ylabel('z (m)')
-            plt.xlabel('Difference in mode shape')
+            plt.suptitle(
+                "Difference in mode shape from PyKrak and KRAKEN\nMode {}".format(i + 1)
+            )
+            plt.ylabel("z (m)")
+            plt.xlabel("Difference in mode shape")
             plt.gca().invert_yaxis()
         plt.show()
+
 
 def field_comp():
     """
@@ -223,8 +227,7 @@ def field_comp():
         c_low, c_high = cint.Low, cint.High
         attn_units = "dbplam"
 
-
-        RMax = RMax*1e3
+        RMax = RMax * 1e3
 
         (
             pykrak_env,
@@ -249,35 +252,42 @@ def field_comp():
             freq, N_list, rmax=RMax, c_low=c_low, c_high=c_high
         )
 
-        #pykrak_env.plot_env()
+        # pykrak_env.plot_env()
 
         zs = 500.0
         zs_arr = np.array([zs])
         zr = 2500.0
         zr_arr = np.array([zr])
-        rr_arr = np.linspace(200.0, 220, 1001)*1e3
+        rr_arr = np.linspace(200.0, 220, 1001) * 1e3
         rr_offset = 0.0
-        print('freq', freq)
+        print("freq", freq)
         rr_offset_arr = np.array([rr_offset])
         c_ref = 1500.0
-        #beam_pattern = np.empty((0, 2), dtype=np.float64)
+        # beam_pattern = np.empty((0, 2), dtype=np.float64)
 
-        cp = field.get_pressure(pk_krs, phi_z, phi, zs_arr, zr_arr, rr_arr, rr_offset_arr, freq)
-        cp_src = field.get_pressure(pk_krs, phi_z, phi, zs_arr, zr_arr, np.array([1.0]), rr_offset_arr, freq)
+        cp = field.get_pressure(
+            pk_krs, phi_z, phi, zs_arr, zr_arr, rr_arr, rr_offset_arr, freq
+        )
+        cp_src = field.get_pressure(
+            pk_krs, phi_z, phi, zs_arr, zr_arr, np.array([1.0]), rr_offset_arr, freq
+        )
         plt.figure()
-        P_DB = 20*np.log10(np.abs(cp[0,0,:])) # get field along the line
-        P_DB_src = 20*np.log10(np.abs(cp_src[0,0,0])) # get field at 1 m from the source
-        P_DB_src = 20*np.log10(1/4/np.pi)
-        print('P_DB_src', P_DB_src)
+        P_DB = 20 * np.log10(np.abs(cp[0, 0, :]))  # get field along the line
+        P_DB_src = 20 * np.log10(
+            np.abs(cp_src[0, 0, 0])
+        )  # get field at 1 m from the source
+        P_DB_src = 20 * np.log10(1 / 4 / np.pi)
+        print("P_DB_src", P_DB_src)
         TL = P_DB_src - P_DB
         plt.suptitle("Comparison of PyKRAK field for {}".format(env))
-        plt.plot(rr_arr/1e3, TL, label="PyKrak")
-        #plt.colorbar(label="TL (dB)")
+        plt.plot(rr_arr / 1e3, TL, label="PyKrak")
+        # plt.colorbar(label="TL (dB)")
         plt.ylim([110, 70])
         plt.xlim([200, 220])
-        plt.xlabel('Range (km)')
-        plt.ylabel('TL (dB)')
+        plt.xlabel("Range (km)")
+        plt.ylabel("TL (dB)")
         plt.show()
+
 
 kr_comp()
 phi_comp()

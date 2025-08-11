@@ -389,6 +389,7 @@ def vec_lin_int(xpts, xgrid, ygrid):
         yout[i] = lin_int(xpts[i], xgrid, ygrid)
     return yout
 
+
 def vec_vec_lin_int(xpts, xgrid, ygridgrid):
     """
     Each column of ygridgrid is a function evaluated at xgrid
@@ -398,6 +399,7 @@ def vec_vec_lin_int(xpts, xgrid, ygridgrid):
     for i in range(ygridgrid.shape[1]):
         yout[:, i] = vec_lin_int(xpts, xgrid, ygridgrid[:, i])
     return yout
+
 
 def get_depth_spline(z, c, cp1, cpn):
     """

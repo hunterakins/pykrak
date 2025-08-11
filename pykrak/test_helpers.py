@@ -134,7 +134,7 @@ def init_pykrak_env(ssp, bdry, pos, beam, cint, RMax):
         attn_hs,
         attns_hs,
         attn_units,
-        sigma_arr
+        sigma_arr,
     )
     N_list = [x + 1 for x in N_list]  # kraken doesn't count end points?
     return (

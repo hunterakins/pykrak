@@ -60,6 +60,7 @@ class Modes:
             phi_zr[:, i] = np.interp(zr, phi_z, phi[:, i])
         return phi_zr
 
+
 class Env:
     """
     Store the environment parameters for a layered fluid medium
@@ -124,7 +125,7 @@ class Env:
         attnp_bott,
         attns_bott,
         attn_units,
-        sigma_arr
+        sigma_arr,
     ):
         self.z_list = z_list
         self.cp_list = cp_list
@@ -188,7 +189,7 @@ class Env:
             rmax,
             c_low,
             c_high,
-            self.sigma_arr
+            self.sigma_arr,
         )
 
         # pk_krs, phi_z, phi, ugs = kr.list_input_solve(freq, z_list, cp_list, cs_list, rho_list, attnp_list, attns_list, cp_top, cs_top, rho_top, attnp_top, attns_top, cp_hs, cs_hs, rho_hs, attnp_hs, attns_hs, 'dbplam', N_list, RMax, c_low, c_high)
@@ -264,6 +265,7 @@ class Env:
         )
         return
 
+
 class FluidEnv(Env):
     def __init__(
         self,
@@ -305,5 +307,5 @@ class FluidEnv(Env):
             attnp_bott,
             attns_bott,
             attn_units,
-            sigma_arr=sigma_arr
+            sigma_arr=sigma_arr,
         )
