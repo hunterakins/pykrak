@@ -54,7 +54,9 @@
 
  Mesh multiplier   CPU seconds
  NTotal, NTotal1        1600        1601
-        1            0.549E-02s
+        1            0.567E-02s
+    10000000000.00000    
+    0.000000000000000    
 
     I       k             alpha     Phase Speed     Group Speed
           (1/m)           (1/m)        (m/s)           (m/s)

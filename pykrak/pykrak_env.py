@@ -165,12 +165,6 @@ class Env:
         c_low : minimum phase speed to include in the calculation
         c_high : maximum phase speed to include in the calculation
         """
-
-        default_c_low = kr.get_default_cmin(self.cp_list)
-        default_c_high = kr.get_default_cmax(self.cp_bott)
-        c_low = max(c_low, default_c_low)
-        c_high = min(c_high, default_c_high)
-
         krs, z, phi, ugs = kr.list_input_solve(
             freq,
             self.z_list,

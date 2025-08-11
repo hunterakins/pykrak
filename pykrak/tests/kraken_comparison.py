@@ -22,6 +22,11 @@ import os
 
 def kr_comp():
     env_files = [
+        "ice.env",
+        "atten.env",
+        "elsed.env",
+        "flused.env",
+        "double.env",
         "ice_env.env",
         "solve2test.env",
         "pekeris_layer_attn.env",
@@ -30,11 +35,12 @@ def kr_comp():
         "pekeris_rough_bdry.env"
     ]
     for env in env_files:
-        # os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
+        #os.system('cd at_files/ && kraken.exe {}'.format(env[:-4]))
         TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env(
             "at_files/{}.env".format(env[:-4]), "kraken"
         )
         c_low, c_high = cint.Low, cint.High
+        print('c_low', c_low, 'c_high', c_high)
         attn_units = "dbplam"
 
         modes = rw.read_modes(
@@ -44,11 +50,12 @@ def kr_comp():
         krak_modes = modes.phi
         z = modes.z
         krak_prt_k, mode_nums, vps, vgs = th.read_krs_from_prt_file(
-            "at_files/{}.prt".format(env[:-4]), verbose=True
+            "at_files/{}.prt".format(env[:-4]), verbose=False
         )
         print("krak M", modes.M)
-
-        RMax = 0.0
+    
+        print('RMax', RMax)
+        RMax = RMax * 1e3  # Convert to meters
 
         (
             pykrak_env,
@@ -72,8 +79,16 @@ def kr_comp():
         pk_krs, phi_z, phi, ugs = pykrak_env.get_modes(
             freq, N_list, rmax=RMax, c_low=c_low, c_high=c_high
         )
+
         print("pykrak M", pk_krs.size)
-        for i in range(len(krak_prt_k)):
+        #sys.exit()
+        if modes.M != pk_krs.size:
+            print(
+                "Warning: Number of modes in kraken and pykrak do not match! {} != {}".format(
+                    modes.M, pk_krs.size
+                )
+            )
+        for i in range(min(len(krak_prt_k), pk_krs.size)):
             mode_num = mode_nums[i]
             krak_k = str(krak_prt_k[i].real)
             pk_k = str(pk_krs[mode_num - 1].real)
@@ -107,9 +122,13 @@ def kr_comp():
         plt.suptitle("Comparison of pykrak and kraken wavenumbers for {}".format(env))
         plt.show()
 
-
 def phi_comp():
     env_files = [
+        "ice.env",
+        "atten.env",
+        "elsed.env",
+        "flused.env",
+        "double.env",
         "solve2test.env",
         "pekeris_layer_attn.env",
         "pekeris_attn.env",
@@ -132,6 +151,8 @@ def phi_comp():
 
         z = modes.z
         print("krak M", modes.M)
+
+        RMax = RMax * 1e3
 
         (
             pykrak_env,
@@ -156,7 +177,7 @@ def phi_comp():
         print("N_list", N_list)
 
         pk_krs, phi_z, phi, ugs = pykrak_env.get_modes(
-            freq, N_list, rmax=0.0, c_low=c_low, c_high=c_high
+            freq, N_list, rmax=RMax, c_low=c_low, c_high=c_high
         )
         phi_new = np.zeros((z.size, phi.shape[1]))
         for i in range(phi.shape[1]):
@@ -185,8 +206,15 @@ def phi_comp():
         plt.show()
 
 def field_comp():
+    """
+    https://oalib-acoustics.org/website_resources/AcousticsToolbox/manual/kraken.html
+
+    The TL plots for the test problems are visible here
+    """
+
     env_files = [
         "pekeris.env",
+        "double.env",
     ]
     for env in env_files:
         TitleEnv, freq, ssp, bdry, pos, beam, cint, RMax = rw.read_env(
@@ -196,7 +224,7 @@ def field_comp():
         attn_units = "dbplam"
 
 
-        RMax = 0.0
+        RMax = RMax*1e3
 
         (
             pykrak_env,
@@ -221,6 +249,8 @@ def field_comp():
             freq, N_list, rmax=RMax, c_low=c_low, c_high=c_high
         )
 
+        #pykrak_env.plot_env()
+
         zs = 500.0
         zs_arr = np.array([zs])
         zr = 2500.0
@@ -237,17 +267,18 @@ def field_comp():
         plt.figure()
         P_DB = 20*np.log10(np.abs(cp[0,0,:])) # get field along the line
         P_DB_src = 20*np.log10(np.abs(cp_src[0,0,0])) # get field at 1 m from the source
+        P_DB_src = 20*np.log10(1/4/np.pi)
         print('P_DB_src', P_DB_src)
         TL = P_DB_src - P_DB
         plt.suptitle("Comparison of PyKRAK field for {}".format(env))
         plt.plot(rr_arr/1e3, TL, label="PyKrak")
         #plt.colorbar(label="TL (dB)")
-        plt.gca().invert_yaxis()
+        plt.ylim([110, 70])
+        plt.xlim([200, 220])
         plt.xlabel('Range (km)')
         plt.ylabel('TL (dB)')
         plt.show()
 
-
-field_comp()
 kr_comp()
 phi_comp()
+field_comp()
