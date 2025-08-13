@@ -11,7 +11,7 @@ Institution: Scripps Institution of Oceanography, UC San Diego
 
 import numpy as np
 from matplotlib import pyplot as plt
-from pyat.pyat.readwrite import (
+from pyat.readwrite import (
     read_env,
     write_env,
     write_fieldflp,
@@ -24,7 +24,7 @@ from pykrak.test_helpers import get_krak_inputs
 
 # from pykrak.adia_model import MultiFrequencyAdiabaticModel
 from pykrak.mf_model import MultiFrequencyModel
-from pyat.pyat import env as pyat_env
+from pyat import env as pyat_env
 from mpi4py import MPI
 import os
 import time
