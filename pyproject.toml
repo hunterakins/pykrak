@@ -16,5 +16,9 @@ dev = [
   "ruff>=0.12.5",
 ]
 test = [
+  "pyat",
   "scipy>=1.15.3",
 ]
+
+[tool.uv.sources]
+pyat = { git = "https://github.com/hunterakins/pyat" }

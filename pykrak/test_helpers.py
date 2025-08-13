@@ -8,14 +8,16 @@ Author: Hunter Akins
 Institution: Scripps Institution of Oceanography, UC San Diego
 """
 
+import os
+
+import matplotlib
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import rc
-import matplotlib
-from pyat.pyat.readwrite import read_env, read_modes
-from pyat.pyat import env as pyat_env
+from pyat import env as pyat_env
+from pyat.readwrite import read_env, read_modes
+
 from pykrak.pykrak_env import Env
-import os
 
 
 def read_krs_from_prt_file(prt_file, verbose=True):

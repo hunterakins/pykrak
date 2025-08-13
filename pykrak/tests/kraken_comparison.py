@@ -14,7 +14,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from pykrak import test_helpers as th
-from pyat.pyat import readwrite as rw
+from pyat import readwrite as rw
 from pykrak import krak_routines as kr
 from pykrak import field as field
 import os
