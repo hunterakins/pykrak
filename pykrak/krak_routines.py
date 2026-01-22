@@ -499,7 +499,7 @@ def acoustic_layers(
         p2 = (b1[ii] - h2k2) * g - 2.0 * hMedium * f * rhoMedium
 
         # Shoot (towards surface) through a single medium
-        for ii in range(ind_arr[Medium] + NMedium - 1, ind_arr[Medium], -1):
+        for ii in range(ind_arr[Medium] + NMedium - 2, ind_arr[Medium]-1, -1):
             p0 = p1
             p1 = p2
             p2 = (h2k2 - b1[ii]) * p1 - p0
