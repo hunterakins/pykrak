@@ -20,4 +20,9 @@ Install development and testing dependencies using
 uv sync --all-groups
 ```
 
+## Tests
+Some basic tests are implemented to compare the results of the modal parameters $k_r$ and $\Psi$ to the original `KRAKEN` program.
 
+``` sh
+uv run pytest
+```

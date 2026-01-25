@@ -17,8 +17,15 @@ dev = [
 ]
 test = [
   "pyat",
+  "pytest>=9.0.1",
   "scipy>=1.15.3",
 ]
+
+[tool.pytest]
+addopts = [
+  "--import-mode=importlib",
+]
+python_files = ["test_*.py"]
 
 [tool.uv.sources]
 pyat = { git = "https://github.com/hunterakins/pyat" }
