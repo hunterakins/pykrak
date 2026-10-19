@@ -14,7 +14,7 @@ from numba import njit
 from pykrak import attn_pert as ap
 
 
-@njit
+@njit(cache=True)
 def initialize(
     h_arr,
     ind_arr,
@@ -137,6 +137,7 @@ def initialize(
         c_min *= 0.85
     c_low = max(c_low, c_min)
 
+
     return (
         b1,
         b1c,
@@ -152,7 +153,7 @@ def initialize(
     )
 
 
-@njit
+@njit(cache=True)
 def get_f_g(cp, cs, rho, x, omega2, mode_count, complex_flag):
     if rho == 0.0:  # Vacuum
         f = 1.0
@@ -193,7 +194,7 @@ def get_f_g(cp, cs, rho, x, omega2, mode_count, complex_flag):
     return f, g, yV
 
 
-@njit
+@njit(cache=True)
 def elastic_up(
     x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR, iPowerF
 ):
@@ -269,7 +270,7 @@ def elastic_up(
     return yV, iPower
 
 
-@njit
+@njit(cache=True)
 def elastic_down(
     x, yV, iPower, h, b1, b2, b3, b4, rho_arr, Floor, Roof, iPowerR, iPowerF
 ):
@@ -345,7 +346,7 @@ def elastic_down(
     return yV, iPower
 
 
-@njit
+@njit(cache=True)
 def get_bc_impedance(
     x,
     omega2,
@@ -446,8 +447,18 @@ def get_bc_impedance(
         g = np.real(g)
     return f, g, iPower, mode_count
 
+@njit(cache=True)
+def pekeris_root(z):
+    root = np.sqrt(np.complex(z))
 
-@njit
+    if root.real < 0.0:
+        root = -root
+    elif root.real == 0.0 and root.imag < 0.0:
+        root = -root
+
+    return root
+
+@njit(cache=True)
 def acoustic_layers(
     x,
     f,
@@ -482,7 +493,6 @@ def acoustic_layers(
     # Loop over successive acoustic media starting at the end and going up
     for Medium in range(last_acoustic, first_acoustic - 1, -1):
         hMedium = h_arr[Medium]
-        # print('hMedium', hMedium)
         if Medium == ind_arr.size - 1:
             z_layer = z_arr[ind_arr[Medium] :]
         else:
@@ -494,6 +504,7 @@ def acoustic_layers(
         rhoMedium = rho_arr[
             ind_arr[Medium]
         ]  # Density is homogeneous using value at the top of each medium
+
 
         p1 = -2.0 * g
         p2 = (b1[ii] - h2k2) * g - 2.0 * hMedium * f * rhoMedium
@@ -508,7 +519,77 @@ def acoustic_layers(
                 if p0 * p1 <= 0.0:
                     mode_count += 1
 
-            if abs(p2) > Roof:  # Scale if necessary
+            while abs(p2) > Roof:  # Scale if necessary
+                p0 *= Floor
+                p1 *= Floor
+                p2 *= Floor
+                iPower -= iPowerF
+
+        # Update f and g
+        rhoMedium = rho_arr[ind_arr[Medium]]  # Density at the top of the layer
+        f = -(p2 - p0) / (2.0 * hMedium * rhoMedium)
+        g = -p1
+    return f, g, iPower, mode_count
+
+@njit(cache=True)
+def acoustic_layers_no_count(
+    x,
+    f,
+    g,
+    iPower,
+    ind_arr,
+    h_arr,
+    z_arr,
+    b1,
+    rho_arr,
+    CountModes,
+    mode_count,
+    first_acoustic,
+    last_acoustic,
+):
+    """
+    Shoot through acoustic layers
+    from the bottom, where there is a boundary condition
+    f p + g \dv{p}{z} / rho(z-) = 0
+    x - float 64, eigenvalue is x = kr^2
+    f, g are impedance functions at the bottom (float 64)
+    iPower - int, power of 10 for scaling the shooting solutions
+    h_arr - mesh array
+
+    """
+
+    # Parameters
+    iPowerF = -50
+    Roof = 1.0e50
+    Floor = 1.0e-50
+
+    # Loop over successive acoustic media starting at the end and going up
+    for Medium in range(last_acoustic, first_acoustic - 1, -1):
+        hMedium = h_arr[Medium]
+        if Medium == ind_arr.size - 1:
+            z_layer = z_arr[ind_arr[Medium] :]
+        else:
+            z_layer = z_arr[ind_arr[Medium] : ind_arr[Medium + 1]]
+        NMedium = z_layer.size  # includes interface points
+        h2k2 = hMedium**2 * x
+
+        ii = ind_arr[Medium] + NMedium - 1
+        rhoMedium = rho_arr[
+            ind_arr[Medium]
+        ]  # Density is homogeneous using value at the top of each medium
+
+
+        p1 = -2.0 * g
+        p2 = (b1[ii] - h2k2) * g - 2.0 * hMedium * f * rhoMedium
+
+        # Shoot (towards surface) through a single medium
+        for ii in range(ind_arr[Medium] + NMedium - 2, ind_arr[Medium]-1, -1):
+            p0 = p1
+            p1 = p2
+            p2 = (h2k2 - b1[ii]) * p1 - p0
+
+
+            while abs(p2) > Roof:  # Scale if necessary
                 p0 *= Floor
                 p1 *= Floor
                 p2 *= Floor
@@ -521,7 +602,7 @@ def acoustic_layers(
     return f, g, iPower, mode_count
 
 
-@njit
+@njit(cache=True)
 def funct(x, args):
     """
     funct(x) = 0 is the dispersion relation
@@ -592,7 +673,6 @@ def funct(x, args):
         mode_count,
         False,
     )
-    # print('x, f_bott, g_bott', x, f_bott, g_bott)
     f, g, iPower, mode_count = acoustic_layers(
         x,
         f_bott.real,
@@ -608,8 +688,6 @@ def funct(x, args):
         first_acoustic,
         last_acoustic,
     )
-    # print('after al', f, g)
-    # print('eig x, f, g, iPower after AcousticLayers = ', x, f, g, iPower)
     f_top, g_top, iPower_top, mode_count = get_bc_impedance(
         x,
         omega2,
@@ -631,7 +709,6 @@ def funct(x, args):
         False,
     )
 
-    # print('at top', f_top, g_top)
 
     Delta = (f * g_top - g * f_top).real
     iPower = iPower + iPower_top
@@ -658,7 +735,7 @@ def funct(x, args):
     return Delta, iPower, mode_count
 
 
-@njit
+@njit(cache=True)
 def bisection(x_min, x_max, M, args):
     """
     Returns isolating intervals (xL, xR) for each eigenvalue
@@ -709,7 +786,7 @@ def bisection(x_min, x_max, M, args):
     return x_l, x_r
 
 
-@njit
+@njit(cache=True)
 def solve1(args, h_v):
     """
     Solve for eigenvalues using Sturm sequences and Brent's method.
@@ -817,7 +894,7 @@ def solve1(args, h_v):
     return ev_mat, m
 
 
-@njit
+@njit(cache=False)
 def solve2(args, h_v, M):
     """
     h_v is array of mesh sizes
@@ -873,8 +950,8 @@ def solve2(args, h_v, M):
                         x2 = h_v[j + ii + 1] ** 2
 
                         p[j] = (
-                            (h_v[iset - 1] ** 2 - x2) * p[j]
-                            - (h_v[iset - 1] ** 2 - x1) * p[j + 1]
+                            (h_v[iset ] ** 2 - x2) * p[j]
+                            - (h_v[iset ] ** 2 - x1) * p[j + 1]
                         ) / (x1 - x2)
                 x = p[0]
 
@@ -901,7 +978,7 @@ def solve2(args, h_v, M):
     return ev_mat, mode
 
 
-@njit
+@njit(cache=True)
 def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
     """
     Secant method for finding roots of a real-valued function.
@@ -946,7 +1023,7 @@ def root_finder_secant_real(x2, tolerance, max_iterations, func, args):
     return x2, max_iterations, "Failure to converge in RootFinderSecant"
 
 
-@njit
+@njit(cache=True)
 def root_finder_secant_complex(x2, tolerance, max_iterations, func, args):
     """
     Secant method for finding roots of a complex-valued function.
@@ -991,7 +1068,7 @@ def root_finder_secant_complex(x2, tolerance, max_iterations, func, args):
     return x2, max_iterations, "Failure to converge in RootFinderSecant"
 
 
-@njit
+@njit(cache=True)
 def zbrent(a, b, t, args):
     """
     Licensing:
@@ -1089,7 +1166,7 @@ def zbrent(a, b, t, args):
     return value
 
 
-@njit
+@njit(cache=True)
 def inverse_iter(d, e, max_iteration=2000):
     """
     Perform inverse iteration to compute an eigenvector.
@@ -1188,7 +1265,7 @@ def inverse_iter(d, e, max_iteration=2000):
     return eigenvector, i_error
 
 
-@njit
+@njit(cache=True)
 def normalize(phi, iTurningPoint, x, args, z):
     """
     Normalize the eigenvector phi and compute perturbations from attenuation and group velocity.
@@ -1395,7 +1472,7 @@ def normalize(phi, iTurningPoint, x, args, z):
     return w, Perturbation_k, sg, ug
 
 
-@njit
+@njit(cache=True)
 def scatter_root(z):
     if np.real(z) >= 0:
         return np.sqrt(z)
@@ -1403,7 +1480,7 @@ def scatter_root(z):
         return -np.sqrt(-z) * 1j
 
 
-@njit
+@njit(cache=True)
 def kup_ing(sigma, eta1_sq, rho1, eta2_sq, rho2, P, U):
     """
     Kuperman ingenito imaginary part of wavenumber for boundary roughnesss
@@ -1434,7 +1511,7 @@ def kup_ing(sigma, eta1_sq, rho1, eta2_sq, rho2, P, U):
         return ret
 
 
-@njit
+@njit(cache=True)
 def scatterloss(args, phi, x):
     """
     perturbation_k - complex wavenumber, already includes volume attenuation from
@@ -1531,8 +1608,7 @@ def scatterloss(args, phi, x):
         )
     return scattering_perturbation_k
 
-
-@njit
+@njit(cache=True)
 def get_phi(args):
     (
         omega2,
@@ -1688,7 +1764,6 @@ def get_phi(args):
         ugs_arr[mind] = ug
     return z, phi, pert_k_arr, ugs_arr
 
-
 def mesh_list_inputs(
     z_list,
     cp_list,
@@ -1699,12 +1774,18 @@ def mesh_list_inputs(
     Ng_arr,
     attn_units,
     omega,
+    interp_type
 ):
     num_layers = len(z_list)
     h_list = []
     for i in range(num_layers):
         z_arr_i = np.linspace(z_list[i][0], z_list[i][-1], Ng_arr[i])
-        cp_arr_i = np.interp(z_arr_i, z_list[i], cp_list[i])
+        if interp_type == 'lin':
+            cp_arr_i = np.interp(z_arr_i, z_list[i], cp_list[i])
+        elif interp_type == 'nsq_lin':
+            cp_arr_i = np.sqrt(1/np.interp(z_arr_i, z_list[i], 1/cp_list[i]**2))
+        else:
+            raise ValueError('Interpolation options are linear and n-squared linear')
         cs_arr_i = np.interp(z_arr_i, z_list[i], cs_list[i])
         rho_arr_i = np.interp(z_arr_i, z_list[i], rho_list[i])
         attnp_arr_i = np.interp(z_arr_i, z_list[i], attnp_list[i])
@@ -1741,7 +1822,6 @@ def mesh_list_inputs(
     h_arr = np.array(h_list)
     return h_arr, ind_arr, z_arr, cp_arr, cs_arr, rho_arr
 
-
 def list_input_solve(
     freq,
     z_list,
@@ -1766,6 +1846,7 @@ def list_input_solve(
     c_low,
     c_high,
     sigma_arr,
+    interp_type
 ):
     """
     Take the environment specified as a list of arrays (each list item is a layer)
@@ -1830,6 +1911,7 @@ def list_input_solve(
             Ng_arr_i,
             attn_units,
             omega,
+            interp_type
         )
 
         (
@@ -1942,9 +2024,13 @@ def list_input_solve(
         if error * rmax < 1.0:
             break
 
+    if error*rmax > 1.0:
+        print('Convergence not achieved, final phase err', error*rmax)
     M_final = min(
         pert_k.size, M
     )  # in case differing number of modes for different meshes
     krs = np.sqrt(extrap[0, :M_final] + pert_k[:M_final])
+    phi = phi[:,:M_final]
+    ugs = ugs[:M_final]
     # krs = np.sqrt(extrap[0,:M])
     return krs, z, phi, ugs
