@@ -534,7 +534,7 @@ def compute_reflection_coefficient(
 
     if c0 <= 0.0:
         raise ValueError("Reference sound speed c0 must be positive")
-    print('c0', c0)
+
     # Free-space wavenumber.
     k0 = omega / c0
 
@@ -733,70 +733,71 @@ def list_input_bounce(
         mode_count=0,
         ipower_initial=0,
     )
+    return theta, reflection_coefficient
 
 
 
-
-def test():
-    z_list = [np.array([0.0, 10.0]), np.array([10.0, 20.0])]
-    cp_list = [np.array([1550.0, 1550.0]), np.array([1600.0, 1600.0])]
-    cs_list = [np.array([0.0, 0.0]), np.array([0.0, 0.0])]
-    attnp_list = [np.array([0.0, 0.0]), np.array([0.0, 0.0])]
-    attns_list = [np.array([0.0, 0.0]), np.array([0.0, 0.0])]
-    rho_list = [np.array([1.5, 1.5]), np.array([2.0, 2.0])]
-    cp_top = 1480.0
-    cs_top = 0.0
-    rho_top = 1.0
-    attnp_top = 0.0
-    attns_top = 0.0
-
-    cp_bott = 2000.0
-    cs_bott = 0.0
-    rho_bott = 2.5
-    attnp_bott = 0.00
-    attns_bott = 0.00
-
-    attn_units = "dbplam"
-    rmax = 0.0
-    freq = 1000.0
-    c_low = 1400.0
-    c_high = 1e9
-    nk_tab = 901
-    lam = 1500.0 / freq
-    dz = lam / 20
-    Ng_list = [int((z_list[i][1] - z_list[i][0]) / dz) +  1 for i in range(len(z_list))]
-
-    theta_crit = 180/np.pi*np.arccos(cp_top / cp_list[0])
-    print('theta_crit', theta_crit)
-
-    for freq in [1000, 1001, 1002, 1003, 1004]:
-        now =time.time()
-        list_input_bounce(
-            freq,
-            nk_tab,
-            z_list,
-            cp_list,
-            cs_list,
-            rho_list,
-            attnp_list,
-            attns_list,
-            cp_top,
-            cs_top,
-            rho_top,
-            attnp_top,
-            attns_top,
-            cp_bott,
-            cs_bott,
-            rho_bott,
-            attnp_bott,
-            attns_bott,
-            attn_units,
-            Ng_list,
-            rmax,
-            c_low,
-            c_high,
-            'lin',
-            )
-        print('runtime', time.time() - now)
-test()
+if __name__ == '__main__':
+    def test():
+        z_list = [np.array([0.0, 10.0]), np.array([10.0, 20.0])]
+        cp_list = [np.array([1550.0, 1550.0]), np.array([1600.0, 1600.0])]
+        cs_list = [np.array([0.0, 0.0]), np.array([0.0, 0.0])]
+        attnp_list = [np.array([0.0, 0.0]), np.array([0.0, 0.0])]
+        attns_list = [np.array([0.0, 0.0]), np.array([0.0, 0.0])]
+        rho_list = [np.array([1.5, 1.5]), np.array([2.0, 2.0])]
+        cp_top = 1480.0
+        cs_top = 0.0
+        rho_top = 1.0
+        attnp_top = 0.0
+        attns_top = 0.0
+    
+        cp_bott = 2000.0
+        cs_bott = 0.0
+        rho_bott = 2.5
+        attnp_bott = 0.00
+        attns_bott = 0.00
+    
+        attn_units = "dbplam"
+        rmax = 0.0
+        freq = 1000.0
+        c_low = 1400.0
+        c_high = 1e9
+        nk_tab = 901
+        lam = 1500.0 / freq
+        dz = lam / 20
+        Ng_list = [int((z_list[i][1] - z_list[i][0]) / dz) +  1 for i in range(len(z_list))]
+    
+        theta_crit = 180/np.pi*np.arccos(cp_top / cp_list[0])
+        print('theta_crit', theta_crit)
+    
+        for freq in [1000, 1001, 1002, 1003, 1004]:
+            now =time.time()
+            list_input_bounce(
+                freq,
+                nk_tab,
+                z_list,
+                cp_list,
+                cs_list,
+                rho_list,
+                attnp_list,
+                attns_list,
+                cp_top,
+                cs_top,
+                rho_top,
+                attnp_top,
+                attns_top,
+                cp_bott,
+                cs_bott,
+                rho_bott,
+                attnp_bott,
+                attns_bott,
+                attn_units,
+                Ng_list,
+                rmax,
+                c_low,
+                c_high,
+                'lin',
+                )
+            print('runtime', time.time() - now)
+    test()
 
