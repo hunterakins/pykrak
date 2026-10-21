@@ -673,7 +673,6 @@ def list_input_bounce(
 
     (
         b1,
-        b1c,
         b2,
         b3,
         b4,
@@ -683,7 +682,7 @@ def list_input_bounce(
         elastic_flag,
         first_acoustic,
         last_acoustic,
-    ) = kr.initialize(
+    ) = kr.initialize_bounce(
         h_arr,
         ind_arr,
         z_arr,
