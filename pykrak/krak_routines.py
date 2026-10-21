@@ -14,6 +14,221 @@ from numba import njit
 from pykrak import attn_pert as ap
 
 
+import numpy as np
+from numba import njit
+
+
+@njit(cache=True)
+def bnc_initialize(
+    h_arr,
+    ind_arr,
+    z_arr,
+    omega2,
+    cp_arr,
+    cs_arr,
+    rho_arr,
+    cp_top,
+    cs_top,
+    rho_top,
+    cp_bott,
+    cs_bott,
+    rho_bott,
+    c_low,
+    c_high,
+):
+    """
+    Initializes arrays defining the finite-difference equations
+    for the BOUNCE version of Initialize.
+
+    Args:
+        h_arr: Mesh size for each layer.
+        ind_arr: Starting index of each layer in z_arr.
+        z_arr: Depth array containing doubled interface points.
+        omega2: Squared angular frequency.
+        cp_arr: Compressional wave speeds (complex).
+        cs_arr: Shear wave speeds (complex).
+        rho_arr: Density array.
+
+        cp_top, cs_top, rho_top:
+            Compressional speed, shear speed, and density
+            for the top half-space.
+
+        cp_bott, cs_bott, rho_bott:
+            Compressional speed, shear speed, and density
+            for the bottom half-space.
+
+        c_low: Lower phase-speed bound for the mode search.
+        c_high: Upper phase-speed bound (unchanged by this routine).
+
+    Returns:
+        b1, b1c, b2, b3, b4, rho_arr,
+        c_low, c_high, elastic_flag,
+        first_acoustic, last_acoustic
+    """
+
+    elastic_flag = False
+
+    # Match the initialization in the Fortran BOUNCE routine.
+    c_min = 1.0e6
+
+    n_media = h_arr.size
+    n_points = z_arr.size
+
+    first_acoustic = -1
+    last_acoustic = 0
+
+    # Allocate coefficient arrays.
+    b1 = np.zeros(n_points, dtype=np.float64)
+    b1c = np.zeros(n_points, dtype=np.float64)
+    b2 = np.zeros(n_points, dtype=np.float64)
+    b3 = np.zeros(n_points, dtype=np.float64)
+    b4 = np.zeros(n_points, dtype=np.float64)
+
+    # Avoid modifying the caller's density array.
+    rho_arr = rho_arr.copy()
+
+    # Process each medium.
+    for medium in range(n_media):
+
+        ii = ind_arr[medium]
+
+        if medium == n_media - 1:
+            n_ii = z_arr[ii:].size
+        else:
+            n_ii = z_arr[
+                ii : ind_arr[medium + 1]
+            ].size
+
+        # Acoustic medium.
+        if cs_arr[ii] == 0.0 + 0.0j:
+
+            c_min = min(
+                c_min,
+                np.min(
+                    np.real(cp_arr[ii : ii + n_ii])
+                ),
+            )
+
+            if first_acoustic == -1:
+                first_acoustic = medium
+
+            last_acoustic = medium
+
+            b1[ii : ii + n_ii] = (
+                -2.0
+                + h_arr[medium] ** 2
+                * omega2
+                / cp_arr[ii : ii + n_ii] ** 2
+            ).real
+
+        # Elastic medium.
+        else:
+
+            elastic_flag = True
+            two_h = 2.0 * h_arr[medium]
+
+            for j in range(ii, ii + n_ii):
+
+                c_min = min(
+                    np.real(cs_arr[j]),
+                    c_min,
+                )
+
+                # Keep the squared speeds complex, as in Fortran.
+                cp2 = cp_arr[j] ** 2
+                cs2 = cs_arr[j] ** 2
+
+                b1[j] = np.real(
+                    two_h / (rho_arr[j] * cs2)
+                )
+
+                b2[j] = np.real(
+                    two_h / (rho_arr[j] * cp2)
+                )
+
+                b3[j] = np.real(
+                    4.0
+                    * two_h
+                    * rho_arr[j]
+                    * cs2
+                    * (cp2 - cs2)
+                    / cp2
+                )
+
+                b4[j] = np.real(
+                    two_h * (cp2 - 2.0 * cs2) / cp2
+                )
+
+                rho_arr[j] = (
+                    two_h * omega2 * rho_arr[j]
+                )
+
+    # Bottom half-space.
+    #
+    # In this translation, rho_bott == 0 or rho_bott == 1e10
+    # represents a non-acoustic half-space boundary condition,
+    # following the convention used in the first Python version.
+    if rho_bott != 0.0 and rho_bott != 1.0e10:
+
+        if cs_bott != 0.0 + 0.0j:
+
+            elastic_flag = True
+
+            c_min = min(
+                c_min,
+                np.real(cs_bott),
+            )
+
+        else:
+
+            c_min = min(
+                c_min,
+                np.real(cp_bott),
+            )
+
+    # Top half-space.
+    if rho_top != 0.0 and rho_top != 1.0e10:
+
+        if cs_top != 0.0 + 0.0j:
+
+            elastic_flag = True
+
+            c_min = min(
+                c_min,
+                np.real(cs_top),
+            )
+
+        else:
+
+            c_min = min(
+                c_min,
+                np.real(cp_top),
+            )
+
+    # Reduce c_min for elastic media.
+    if elastic_flag:
+        c_min *= 0.9
+
+    # Restrict the lower phase-speed bound.
+    c_low = max(
+        c_low,
+        0.99 * c_min,
+    )
+
+    return (
+        b1,
+        b1c,
+        b2,
+        b3,
+        b4,
+        rho_arr,
+        c_low,
+        c_high,
+        elastic_flag,
+        first_acoustic,
+        last_acoustic,
+    )
+
 @njit(cache=True)
 def initialize(
     h_arr,
